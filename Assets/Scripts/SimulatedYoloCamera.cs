@@ -14,12 +14,10 @@ public class SimulatedYoloCamera : MonoBehaviour
     public (float angle, float distance, bool visible) GetTargetInfo()
     {
         if (targetBall == null || maxVisibleDistance <= 0f || horizontalFOV <= 0f)
-            return (0f, 1f, false);
+            return (-1f, -1f, false);
 
         Vector3 toTarget = targetBall.position - transform.position;
         float distance = toTarget.magnitude;
-        if (distance <= Mathf.Epsilon)
-            return (0f, 0f, true);
 
         Vector3 up = transform.up;
         Vector3 flatForward = Vector3.ProjectOnPlane(transform.forward, up).normalized;
@@ -30,6 +28,9 @@ public class SimulatedYoloCamera : MonoBehaviour
         bool inRange = distance <= maxVisibleDistance;
         bool inFov = Mathf.Abs(angleDegrees) <= halfFov;
         bool hasLineOfSight = inRange && inFov && HasLineOfSight(toTarget / distance, distance);
+
+        if (!hasLineOfSight)
+            return (-1f, -1f, false);
 
         float normalizedAngle = Mathf.Clamp(angleDegrees / halfFov, -1f, 1f);
         float normalizedDistance = Mathf.Clamp01(distance / maxVisibleDistance);
