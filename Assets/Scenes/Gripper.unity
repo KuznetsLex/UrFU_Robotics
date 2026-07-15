@@ -136,7 +136,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 225b163fea3fe064abbdb74b95785010, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SimulatedYoloCamera
-  maxVisibleDistance: 2
+  maxVisibleDistance: 30
   horizontalFOV: 40
   targetBall: {fileID: 30465633148301616}
   obstacleLayer:
@@ -372,7 +372,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7187975809797385387, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -19.28
+      value: -18.8
       objectReference: {fileID: 0}
     - target: {fileID: 7187975809797385387, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
       propertyPath: m_LocalPosition.z
@@ -760,7 +760,7 @@ MonoBehaviour:
   agentParameters:
     maxStep: 0
   hasUpgradedFromAgentParameters: 1
-  MaxStep: 0
+  MaxStep: 3000
   trackController: {fileID: 5836328997035038658}
   sensors: {fileID: 8652770086052250300}
   yoloCamera: {fileID: 385035243}
