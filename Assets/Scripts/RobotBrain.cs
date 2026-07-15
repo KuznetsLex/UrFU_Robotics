@@ -20,10 +20,12 @@ public class RobotBrain : Agent
     public float moveRewardScale = 0.01f;
     public float gripReward = 1f;
     public float outOfBoundsPenalty = -0.5f;
-    public Vector2 arenaHalfExtents = new Vector2(30f, 35f);
+    public Vector2 arenaHalfExtents = new Vector2(5f, 5f);
     public float fallDistance = 3f;
-    public float noDetectionTimeout = 60f;
+    public float noDetectionTimeout = 10f;
     public float stepPenalty = -0.0002f;
+    public float grabAttemptReward = 0.1f;        // бонус за попытку захвата рядом
+    public float grabDistanceThreshold = 0.3f;    // дистанция до мяча для бонуса
 
     private Rigidbody rb;
     private Vector3 startPos;
@@ -183,7 +185,7 @@ public class RobotBrain : Agent
 
         if (ball != null)
         {
-            float currentDistance = Vector3.Distance(rb.position, ball.position);
+            float currentDistance = Vector3.Distance(holdPoint.position, ball.position);
             AddReward((lastDistanceToBall - currentDistance) * moveRewardScale);
             lastDistanceToBall = currentDistance;
         }
@@ -199,6 +201,17 @@ public class RobotBrain : Agent
             AddReward(gripReward);
             EndEpisode();
             return;
+        }
+
+        // --- Награда за попытку захвата рядом с мячом ---
+        if (gripCommand == 1 && ball != null && holdPoint != null)
+        {
+            float distToBall = Vector3.Distance(holdPoint.position, ball.position);
+            if (distToBall < grabDistanceThreshold)
+            {
+                AddReward(grabAttemptReward);
+                // Опционально: можно залогировать для отладки
+            }
         }
 
         Vector3 displacement = rb.position - startPos;
