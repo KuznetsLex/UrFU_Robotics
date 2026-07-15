@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Scripting;
 
 [RequireComponent(typeof(Rigidbody))]
 public class TrackController : MonoBehaviour
@@ -32,6 +33,7 @@ public class TrackController : MonoBehaviour
     // Публичный метод, который будет вызывать RobotBrain.cs (ИИ-агент)
     public void Move(float gas, float steer)
     {
+        Debug.Log($"Move called: gas={gas}, steer={steer}");
         // Ограничиваем базовый сигнал газа рамками maxLinearCmd[cite: 4]
         currentGas = Mathf.Clamp(gas, -maxLinearCmd, maxLinearCmd);
         currentSteer = Mathf.Clamp(steer, -1f, 1f);

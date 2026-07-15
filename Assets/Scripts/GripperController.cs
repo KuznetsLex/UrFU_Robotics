@@ -173,4 +173,6 @@ public class GripperController : MonoBehaviour
         if (keyboard.gKey.wasPressedThisFrame) Grab();
         if (keyboard.rKey.wasPressedThisFrame) Release();
     }
+
+    public bool IsGrabbing => isGrabbing;
 }
