@@ -34,6 +34,12 @@ public class RobotBrain : Agent
     public float minSpawnDistance = 2f;
     public bool isTraining = true; // включайте в инспекторе для обучения
 
+    [Header("Domain Randomization")]
+    public bool randomizeMass = true;
+    public bool randomizeMotorParams = true;
+    public bool addUltrasonicNoise = true;
+    public bool enableBurstDropout = true;
+    public bool enableCommandLatency = true;
     private Queue<float[]> actionBuffer = new Queue<float[]>();
     private int currentActionLatency = 0;
     private Rigidbody rb;
@@ -52,7 +58,7 @@ public class RobotBrain : Agent
     private float lastKnownDistance = 1f;
     private float prevGas;
     private float prevSteer;
-    private int burstDropoutRemaining = 0; 
+    private int burstDropoutRemaining = 0;
 
     protected override void Awake()
     {
@@ -111,24 +117,29 @@ public class RobotBrain : Agent
             gripper.Release();
 
         trackController?.Stop();
-        trackController.moveSpeed = UnityEngine.Random.Range(0.3f, 0.7f);   // базовый м/с +-40%
-        trackController.turnSpeed = UnityEngine.Random.Range(80f, 160f);    // скорость вращения
-        //trackController.smoothing = UnityEngine.Random.Range(0.01f, 0.25f); // инерция привода
+        if (randomizeMotorParams && isTraining)
+        {
+            trackController.moveSpeed = UnityEngine.Random.Range(0.3f, 0.7f);
+            trackController.turnSpeed = UnityEngine.Random.Range(80f, 160f);
+            // если нужно smoothing:
+            // trackController.smoothing = UnityEngine.Random.Range(0.01f, 0.25f);
+        }
         rb.position = startPos;
         rb.rotation = startRot;
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
-        rb.mass = UnityEngine.Random.Range(1.0f, 4.0f);
+        if (randomizeMass && isTraining)
+        {
+            rb.mass = UnityEngine.Random.Range(1.0f, 4.0f);
+        }
 
         ResetBall();
-        if (isTraining)
+        if (enableCommandLatency && isTraining)
         {
-            currentActionLatency = UnityEngine.Random.Range(8, 14); // 8-13 шагов (160-260 мс)
+            currentActionLatency = UnityEngine.Random.Range(8, 14);
             actionBuffer.Clear();
             for (int i = 0; i < currentActionLatency; i++)
-            {
                 actionBuffer.Enqueue(new float[] { 0f, 0f });
-            }
         }
         else
         {
@@ -176,9 +187,9 @@ public class RobotBrain : Agent
     public override void CollectObservations(VectorSensor sensor)
     {
         // 1. УЛЬТРАЗВУК С ШУМОМ (±5%)
-        float noiseUS = isTraining ? UnityEngine.Random.Range(-0.05f, 0.05f) : 0f;
+        float noiseUS = (addUltrasonicNoise && isTraining) ? UnityEngine.Random.Range(-0.05f, 0.05f) : 0f;
         float noisyDistance = Mathf.Clamp01(sensors.GetUltrasonicNormalized() + noiseUS);
-        sensor.AddObservation(noisyDistance); // заменили на зашумлённое значение
+        sensor.AddObservation(noisyDistance);
 
         sensor.AddObservation(sensors.GetLeftIR());
         sensor.AddObservation(sensors.GetRightIR());
@@ -190,12 +201,10 @@ public class RobotBrain : Agent
             burstDropoutRemaining--;
 
         // Если робот крутится (угловая скорость > 0.5 рад/с) и тренировка — с шансом 15% активируем слепую зону
-        if (isTraining && rb != null && rb.angularVelocity.magnitude > 0.5f)
+        if (enableBurstDropout && isTraining && rb.angularVelocity.magnitude > 0.5f)
         {
             if (UnityEngine.Random.value < 0.15f)
-            {
-                burstDropoutRemaining = UnityEngine.Random.Range(5, 16); // 5-15 шагов
-            }
+                burstDropoutRemaining = UnityEngine.Random.Range(5, 16);
         }
 
         // Получаем информацию от YOLO
@@ -243,7 +252,7 @@ public class RobotBrain : Agent
 
         // === ЗАДЕРЖКА КОМАНД (Latency) через очередь ===
         float gas, steer;
-        if (isTraining && currentActionLatency > 0)
+        if (enableCommandLatency && isTraining && currentActionLatency > 0)
         {
             // Кладём свежие действия в конец очереди
             float[] newActions = new float[] {
