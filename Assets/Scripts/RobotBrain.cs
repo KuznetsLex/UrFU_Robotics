@@ -27,6 +27,11 @@ public class RobotBrain : Agent
     public float grabAttemptReward = 0.1f;        // бонус за попытку захвата рядом
     public float grabDistanceThreshold = 0.3f;    // дистанция до мяча для бонуса
 
+    [Header("Spawn Randomization")]
+    public bool randomizeSpawn = true;
+    public bool randomizeBall = true;
+    public float minSpawnDistance = 2f;
+
     private Rigidbody rb;
     private Vector3 startPos;
     private Quaternion startRot;
@@ -70,18 +75,45 @@ public class RobotBrain : Agent
             lastDistanceToBall = Vector3.Distance(rb.position, ball.position);
         }
     }
+    private Vector3 GetRandomPosition(float y)
+    {
+        float x = Random.Range(-arenaHalfExtents.x, arenaHalfExtents.x);
+        float z = Random.Range(-arenaHalfExtents.y, arenaHalfExtents.y);
+        return new Vector3(x, y, z);
+    }
 
     public override void OnEpisodeBegin()
     {
+        if (randomizeSpawn)
+        {
+            startPos = GetRandomPosition(startPos.y);
+        }
+
+        if (randomizeBall && ball != null)
+        {
+            Vector3 newBallPos;
+            int attempts = 0;
+            do
+            {
+                newBallPos = GetRandomPosition(ballStartPos.y);
+                attempts++;
+            } while (Vector3.Distance(newBallPos, startPos) < minSpawnDistance && attempts < 50);
+            ballStartPos = newBallPos;
+        }
+
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
         if (gripper != null)
             gripper.Release();
 
         trackController?.Stop();
+        trackController.moveSpeed = UnityEngine.Random.Range(0.3f, 0.7f);   // базовый м/с +-40%
+        trackController.turnSpeed = UnityEngine.Random.Range(80f, 160f);    // скорость вращения
+        //trackController.smoothing = UnityEngine.Random.Range(0.01f, 0.25f); // инерция привода
         rb.position = startPos;
         rb.rotation = startRot;
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
+        rb.mass = UnityEngine.Random.Range(1.0f, 4.0f);
 
         ResetBall();
 
