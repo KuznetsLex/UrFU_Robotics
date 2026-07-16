@@ -20,7 +20,7 @@ public class RobotBrain : Agent
     public float moveRewardScale = 0.01f;
     public float gripReward = 1f;
     public float outOfBoundsPenalty = -0.5f;
-    public Vector2 arenaHalfExtents = new Vector2(5f, 5f);
+    public Vector2 arenaHalfExtents = new Vector2(30f, 30f);
     public float fallDistance = 3f;
     public float noDetectionTimeout = 10f;
     public float stepPenalty = -0.0002f;
