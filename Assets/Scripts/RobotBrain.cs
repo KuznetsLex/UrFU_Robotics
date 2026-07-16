@@ -3,6 +3,7 @@ using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using UnityEngine.InputSystem;
+using System.Collections.Generic;
 
 [RequireComponent(typeof(TrackController), typeof(VirtualSensors), typeof(Rigidbody))]
 public class RobotBrain : Agent
@@ -31,7 +32,10 @@ public class RobotBrain : Agent
     public bool randomizeSpawn = true;
     public bool randomizeBall = true;
     public float minSpawnDistance = 2f;
+    public bool isTraining = true; // включайте в инспекторе для обучения
 
+    private Queue<float[]> actionBuffer = new Queue<float[]>();
+    private int currentActionLatency = 0;
     private Rigidbody rb;
     private Vector3 startPos;
     private Quaternion startRot;
@@ -48,6 +52,7 @@ public class RobotBrain : Agent
     private float lastKnownDistance = 1f;
     private float prevGas;
     private float prevSteer;
+    private int burstDropoutRemaining = 0; 
 
     protected override void Awake()
     {
@@ -116,6 +121,20 @@ public class RobotBrain : Agent
         rb.mass = UnityEngine.Random.Range(1.0f, 4.0f);
 
         ResetBall();
+        if (isTraining)
+        {
+            currentActionLatency = UnityEngine.Random.Range(8, 14); // 8-13 шагов (160-260 мс)
+            actionBuffer.Clear();
+            for (int i = 0; i < currentActionLatency; i++)
+            {
+                actionBuffer.Enqueue(new float[] { 0f, 0f });
+            }
+        }
+        else
+        {
+            currentActionLatency = 0;
+            actionBuffer.Clear();
+        }
 
         hasBall = false;
         targetVisible = false;
@@ -156,28 +175,56 @@ public class RobotBrain : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        sensor.AddObservation(sensors.GetUltrasonicNormalized());
+        // 1. УЛЬТРАЗВУК С ШУМОМ (±5%)
+        float noiseUS = isTraining ? UnityEngine.Random.Range(-0.05f, 0.05f) : 0f;
+        float noisyDistance = Mathf.Clamp01(sensors.GetUltrasonicNormalized() + noiseUS);
+        sensor.AddObservation(noisyDistance); // заменили на зашумлённое значение
+
         sensor.AddObservation(sensors.GetLeftIR());
         sensor.AddObservation(sensors.GetRightIR());
         sensor.AddObservation(sensors.GetGripperIR());
 
+        // 2. ЛОГИКА ПАЧЕЧНЫХ ПОТЕРЬ YOLO (Burst Dropout)
+        // Уменьшаем счётчик, если активен
+        if (burstDropoutRemaining > 0)
+            burstDropoutRemaining--;
+
+        // Если робот крутится (угловая скорость > 0.5 рад/с) и тренировка — с шансом 15% активируем слепую зону
+        if (isTraining && rb != null && rb.angularVelocity.magnitude > 0.5f)
+        {
+            if (UnityEngine.Random.value < 0.15f)
+            {
+                burstDropoutRemaining = UnityEngine.Random.Range(5, 16); // 5-15 шагов
+            }
+        }
+
+        // Получаем информацию от YOLO
         var targetInfo = yoloCamera != null
             ? yoloCamera.GetTargetInfo()
             : (angle: 0f, distance: 1f, visible: false);
 
-        targetVisible = targetInfo.visible;
-        if (targetInfo.visible)
+        // Применяем dropout к видимости
+        bool ballVisible = targetInfo.visible && (burstDropoutRemaining == 0);
+
+        // Обновляем таймер и запоминаем последние координаты
+        if (ballVisible)
         {
             lastKnownAngle = targetInfo.angle;
             lastKnownDistance = targetInfo.distance;
             timeSinceLastDetection = 0f;
         }
+        else
+        {
+            timeSinceLastDetection += Time.fixedDeltaTime; // или Time.deltaTime – но CollectObservations вызывается не каждый кадр, а каждый шаг агента, поэтому используем фиксированный шаг
+        }
 
-        sensor.AddObservation(targetInfo.visible ? targetInfo.angle : lastKnownAngle);
-        sensor.AddObservation(targetInfo.visible ? targetInfo.distance : lastKnownDistance);
-        sensor.AddObservation(targetInfo.visible ? 1f : 0f);
+        // Отправляем наблюдения (используем ballVisible вместо targetInfo.visible)
+        sensor.AddObservation(ballVisible ? targetInfo.angle : lastKnownAngle);
+        sensor.AddObservation(ballVisible ? targetInfo.distance : lastKnownDistance);
+        sensor.AddObservation(ballVisible ? 1f : 0f);
         sensor.AddObservation(hasBall ? 1f : 0f);
 
+        // Остальные наблюдения без изменений
         Vector3 deltaPos = rb.position - startPos;
         float arenaX = Mathf.Max(arenaHalfExtents.x, 0.01f);
         float arenaZ = Mathf.Max(arenaHalfExtents.y, 0.01f);
@@ -189,25 +236,48 @@ public class RobotBrain : Agent
         sensor.AddObservation(Mathf.Clamp01(rb.linearVelocity.magnitude / 2f));
         sensor.AddObservation(Mathf.Clamp01(timeSinceLastDetection / noDetectionTimeout));
     }
-
     public override void OnActionReceived(ActionBuffers actions)
     {
         if (trackController == null)
             return;
 
-        float gas = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
-        float steer = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
+        // === ЗАДЕРЖКА КОМАНД (Latency) через очередь ===
+        float gas, steer;
+        if (isTraining && currentActionLatency > 0)
+        {
+            // Кладём свежие действия в конец очереди
+            float[] newActions = new float[] {
+                Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f),
+                Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f)
+            };
+            actionBuffer.Enqueue(newActions);
+
+            // Извлекаем действие, которое было отправлено currentActionLatency шагов назад
+            float[] delayed = actionBuffer.Dequeue();
+            gas = delayed[0];
+            steer = delayed[1];
+        }
+        else
+        {
+            // Без задержки (для ручного управления или инференса)
+            gas = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
+            steer = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
+        }
+
         int gripCommand = actions.DiscreteActions[0];
 
+        // === Двигаем робота с задержанными командами ===
         trackController.Move(gas, steer);
         AddReward(stepPenalty);
 
+        // Штраф за резкие движения (не меняем)
         float gasDelta = Mathf.Abs(gas - prevGas);
         float steerDelta = Mathf.Abs(steer - prevSteer);
         AddReward(-0.002f * (gasDelta + steerDelta));
         prevGas = gas;
         prevSteer = steer;
 
+        // === Управление клешней (без задержки) ===
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
         if (gripper != null)
         {
@@ -215,6 +285,7 @@ public class RobotBrain : Agent
             else if (gripCommand == 2) gripper.Release();
         }
 
+        // === Награды и завершение эпизода (без изменений) ===
         if (ball != null)
         {
             float currentDistance = Vector3.Distance(holdPoint.position, ball.position);
@@ -235,17 +306,15 @@ public class RobotBrain : Agent
             return;
         }
 
-        // --- Награда за попытку захвата рядом с мячом ---
+        // Награда за попытку захвата рядом с мячом
         if (gripCommand == 1 && ball != null && holdPoint != null)
         {
             float distToBall = Vector3.Distance(holdPoint.position, ball.position);
             if (distToBall < grabDistanceThreshold)
-            {
                 AddReward(grabAttemptReward);
-                // Опционально: можно залогировать для отладки
-            }
         }
 
+        // Проверка выхода за арену
         Vector3 displacement = rb.position - startPos;
         bool outsideArena = Mathf.Abs(displacement.x) > arenaHalfExtents.x
             || Mathf.Abs(displacement.z) > arenaHalfExtents.y
@@ -258,12 +327,16 @@ public class RobotBrain : Agent
             return;
         }
 
+        // Таймаут без обнаружения цели
         if (timeSinceLastDetection > noDetectionTimeout)
         {
             AddReward(-0.2f);
             EpisodeInterrupted();
         }
     }
+
+
+
 
     public override void Heuristic(in ActionBuffers actionsOut)
     {
