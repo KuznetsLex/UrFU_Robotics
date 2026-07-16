@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class CameraRotator : MonoBehaviour
 {
-    [Range(0f, 360f)]
+    [Range(-90f, 90f)]
     public float angle = 0f; // ползунок в инспекторе
 
     private float previousAngle = -1f;
