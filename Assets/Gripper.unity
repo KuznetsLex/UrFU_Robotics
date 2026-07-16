@@ -553,15 +553,23 @@ PrefabInstance:
       objectReference: {fileID: 570552550780473333}
     - target: {fileID: 4619992821177103254, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
       propertyPath: MaxStep
-      value: 6000
+      value: 3000
+      objectReference: {fileID: 0}
+    - target: {fileID: 4619992821177103254, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
+      propertyPath: wallPenalty
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4619992821177103254, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
+      propertyPath: fallDistance
+      value: 30
       objectReference: {fileID: 0}
     - target: {fileID: 4619992821177103254, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
       propertyPath: arenaHalfExtents.x
-      value: 30
+      value: 300
       objectReference: {fileID: 0}
     - target: {fileID: 4619992821177103254, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
       propertyPath: arenaHalfExtents.y
-      value: 30
+      value: 300
       objectReference: {fileID: 0}
     - target: {fileID: 6529880864957705559, guid: 8cbb4e103b9596043b1b5bdbada1c313, type: 3}
       propertyPath: m_LocalPosition.x

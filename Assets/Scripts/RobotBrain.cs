@@ -16,16 +16,16 @@ public class RobotBrain : Agent
     public Transform ball;
 
     [Header("Training")]
-    public float wallPenalty = -0.01f;
+    public float wallPenalty = -0f;
     public float moveRewardScale = 0.01f;
     public float gripReward = 1f;
     public float outOfBoundsPenalty = -0.5f;
-    public Vector2 arenaHalfExtents = new Vector2(30f, 30f);
+    public Vector2 arenaHalfExtents = new Vector2(300f, 300f);
     public float fallDistance = 3f;
-    public float noDetectionTimeout = 10f;
+    public float noDetectionSteps = 100f;
     public float stepPenalty = -0.0002f;
     public float grabAttemptReward = 0.1f;        // бонус за попытку захвата рядом
-    public float grabDistanceThreshold = 0.3f;    // дистанция до мяча для бонуса
+    public float grabDistanceThreshold = 1f;    // дистанция до мяча для бонуса
 
     private Rigidbody rb;
     private Vector3 startPos;
@@ -38,11 +38,12 @@ public class RobotBrain : Agent
     private float lastDistanceToBall;
     private bool hasBall;
     private bool targetVisible;
-    private float timeSinceLastDetection;
+    private float stepsSinceLastDetection;
     private float lastKnownAngle;
     private float lastKnownDistance = 1f;
     private float prevGas;
     private float prevSteer;
+    private float prevAbsAngle = 180f; // инициализируем большим значением
 
     protected override void Awake()
     {
@@ -87,7 +88,7 @@ public class RobotBrain : Agent
 
         hasBall = false;
         targetVisible = false;
-        timeSinceLastDetection = 0f;
+        stepsSinceLastDetection = 0f;
         lastKnownAngle = 0f;
         lastKnownDistance = 1f;
         prevGas = 0f;
@@ -116,12 +117,6 @@ public class RobotBrain : Agent
             ballCollider.enabled = true;
     }
 
-    private void FixedUpdate()
-    {
-        if (!targetVisible)
-            timeSinceLastDetection += Time.fixedDeltaTime;
-    }
-
     public override void CollectObservations(VectorSensor sensor)
     {
         sensor.AddObservation(sensors.GetUltrasonicNormalized());
@@ -138,7 +133,7 @@ public class RobotBrain : Agent
         {
             lastKnownAngle = targetInfo.angle;
             lastKnownDistance = targetInfo.distance;
-            timeSinceLastDetection = 0f;
+            stepsSinceLastDetection = 0f;
         }
 
         sensor.AddObservation(targetInfo.visible ? targetInfo.angle : lastKnownAngle);
@@ -155,11 +150,17 @@ public class RobotBrain : Agent
         float signedHeading = Mathf.DeltaAngle(0f, rb.rotation.eulerAngles.y) / 180f;
         sensor.AddObservation(signedHeading);
         sensor.AddObservation(Mathf.Clamp01(rb.linearVelocity.magnitude / 2f));
-        sensor.AddObservation(Mathf.Clamp01(timeSinceLastDetection / noDetectionTimeout));
+        sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / noDetectionSteps));
     }
 
     public override void OnActionReceived(ActionBuffers actions)
     {
+        // Обновляем счётчик шагов без детекции
+        if (!targetVisible)
+            stepsSinceLastDetection++;
+        else
+            stepsSinceLastDetection = 0; // сбрасываем, если цель видна
+
         if (trackController == null)
             return;
 
@@ -176,6 +177,25 @@ public class RobotBrain : Agent
         prevGas = gas;
         prevSteer = steer;
 
+        // Награда за уменьшение угла до мяча (если цель видна)
+        if (targetVisible)
+        {
+            float currentAbsAngle = Mathf.Abs(lastKnownAngle);
+            // Если предыдущее значение инициализировано (не 180) и текущий угол меньше предыдущего
+            if (prevAbsAngle < 180f && currentAbsAngle < prevAbsAngle)
+            {
+                // Награда пропорциональная уменьшению, например, 0.005 * (prev - curr)
+                float reduction = prevAbsAngle - currentAbsAngle;
+                AddReward(0.005f * reduction);
+            }
+            prevAbsAngle = currentAbsAngle;
+        }
+        else
+        {
+            // Если цель не видна, сбрасываем предыдущее значение, чтобы не награждать за "мнимое" уменьшение
+            prevAbsAngle = 180f;
+        }
+
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
         if (gripper != null)
         {
@@ -190,7 +210,7 @@ public class RobotBrain : Agent
             lastDistanceToBall = currentDistance;
         }
 
-        if (sensors.GetUltrasonicNormalized() < 0.2f)
+        if (sensors.GetUltrasonicNormalized() < 0.01f)
             AddReward(wallPenalty * 0.5f);
         if (sensors.GetLeftIR() > 0.5f || sensors.GetRightIR() > 0.5f)
             AddReward(wallPenalty);
@@ -226,7 +246,7 @@ public class RobotBrain : Agent
             return;
         }
 
-        if (timeSinceLastDetection > noDetectionTimeout)
+        if (stepsSinceLastDetection > noDetectionSteps)
         {
             AddReward(-0.2f);
             EpisodeInterrupted();
