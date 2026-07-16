@@ -25,7 +25,6 @@ public class RobotBrain : Agent
     public float noDetectionSteps = 100f;
     public float stepPenalty = -0.0002f;
     public float grabAttemptReward = 0.1f;        // бонус за попытку захвата рядом
-    public float grabDistanceThreshold = 1f;    // дистанция до мяча для бонуса
 
     private Rigidbody rb;
     private Vector3 startPos;
@@ -44,6 +43,7 @@ public class RobotBrain : Agent
     private float prevGas;
     private float prevSteer;
     private float prevAbsAngle = 180f; // инициализируем большим значением
+    private bool grabZoneRewardGranted;
 
     protected override void Awake()
     {
@@ -68,7 +68,9 @@ public class RobotBrain : Agent
             ballStartParent = ball.parent;
             ballRb = ball.GetComponent<Rigidbody>();
             ballCollider = ball.GetComponent<Collider>();
-            lastDistanceToBall = Vector3.Distance(rb.position, ball.position);
+            lastDistanceToBall = holdPoint != null
+                ? Vector3.Distance(holdPoint.position, ball.position)
+                : 0f;
         }
     }
 
@@ -93,8 +95,10 @@ public class RobotBrain : Agent
         lastKnownDistance = 1f;
         prevGas = 0f;
         prevSteer = 0f;
-        lastDistanceToBall = ball != null
-            ? Vector3.Distance(rb.position, ball.position)
+        prevAbsAngle = 180f;
+        grabZoneRewardGranted = false;
+        lastDistanceToBall = ball != null && holdPoint != null
+            ? Vector3.Distance(holdPoint.position, ball.position)
             : 0f;
     }
 
@@ -181,12 +185,11 @@ public class RobotBrain : Agent
         if (targetVisible)
         {
             float currentAbsAngle = Mathf.Abs(lastKnownAngle);
-            // Если предыдущее значение инициализировано (не 180) и текущий угол меньше предыдущего
-            if (prevAbsAngle < 180f && currentAbsAngle < prevAbsAngle)
+            // Симметричный shaping: улучшение даёт плюс, ухудшение — такой же минус.
+            if (prevAbsAngle < 180f)
             {
-                // Награда пропорциональная уменьшению, например, 0.005 * (prev - curr)
-                float reduction = prevAbsAngle - currentAbsAngle;
-                AddReward(0.005f * reduction);
+                float angleImprovement = prevAbsAngle - currentAbsAngle;
+                AddReward(0.005f * angleImprovement);
             }
             prevAbsAngle = currentAbsAngle;
         }
@@ -199,6 +202,12 @@ public class RobotBrain : Agent
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
         if (gripper != null)
         {
+            if (!grabZoneRewardGranted && gripper.IsTargetInGrabZone())
+            {
+                AddReward(grabAttemptReward);
+                grabZoneRewardGranted = true;
+            }
+
             if (gripCommand == 1) gripper.Grab();
             else if (gripCommand == 2) gripper.Release();
         }
@@ -223,17 +232,6 @@ public class RobotBrain : Agent
             return;
         }
 
-        // --- Награда за попытку захвата рядом с мячом ---
-        if (gripCommand == 1 && ball != null && holdPoint != null)
-        {
-            float distToBall = Vector3.Distance(holdPoint.position, ball.position);
-            if (distToBall < grabDistanceThreshold)
-            {
-                AddReward(grabAttemptReward);
-                // Опционально: можно залогировать для отладки
-            }
-        }
-
         Vector3 displacement = rb.position - startPos;
         bool outsideArena = Mathf.Abs(displacement.x) > arenaHalfExtents.x
             || Mathf.Abs(displacement.z) > arenaHalfExtents.y
@@ -249,7 +247,7 @@ public class RobotBrain : Agent
         if (stepsSinceLastDetection > noDetectionSteps)
         {
             AddReward(-0.2f);
-            EpisodeInterrupted();
+            EndEpisode();
         }
     }
 
