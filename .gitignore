@@ -20,6 +20,7 @@
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 *.log
+.DS_Store
 
 # By default unity supports Blender asset imports, *.blend1 blender files do not need to be committed to version control.
 *.blend1
@@ -109,4 +110,9 @@ InitTestScene*.unity*
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 
-.DS_Store
+
+
+/Build*
+/results
+*.onnx
+*.onnx.meta
