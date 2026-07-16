@@ -58,6 +58,24 @@ public class VirtualSensors : MonoBehaviour
         return minDist;
     }
 
+    public bool TryReadSimulationSensors(
+        out float ultrasonicMeters,
+        out bool leftIrTriggered,
+        out bool rightIrTriggered,
+        out bool gripperIrTriggered)
+    {
+        bool hasSensorPoints = ultrasonicPoint != null ||
+            leftIRPoint != null ||
+            rightIRPoint != null ||
+            gripperIRPoint != null;
+
+        ultrasonicMeters = GetUltrasonicMinDistance();
+        leftIrTriggered = CastRay(leftIRPoint, irDistance);
+        rightIrTriggered = CastRay(rightIRPoint, irDistance);
+        gripperIrTriggered = CastRay(gripperIRPoint, gripperDistance);
+        return hasSensorPoints;
+    }
+
     private bool CastRay(Transform point, float maxDistance)
     {
         if (point == null) return false;
