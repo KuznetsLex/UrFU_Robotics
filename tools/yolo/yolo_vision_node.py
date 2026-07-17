@@ -434,6 +434,8 @@ def detection_packet(
     center_x = (x1 + x2) * 0.5
     confidence = best_detection.confidence
     bbox_area_ratio = (box_width * box_height) / (width * height)
+    # Pixel width / pixel height. The simulator applies the frame aspect ratio
+    # to its normalized viewport box to produce the same quantity.
     bbox_aspect_ratio = box_width / box_height if box_height > 0.0 else 0.0
 
     packet.update(

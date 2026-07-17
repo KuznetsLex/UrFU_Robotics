@@ -179,6 +179,11 @@ public class RobotBrain : Agent
 
     public override void OnEpisodeBegin()
     {
+        if (isTraining)
+        {
+            yoloCamera?.RandomizeDomainParameters();
+        }
+
         // ----- Рандомизация стартовых позиций (если включено) -----
         if (randomizeSpawn)
         {

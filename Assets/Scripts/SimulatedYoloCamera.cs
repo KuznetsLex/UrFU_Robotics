@@ -5,12 +5,31 @@ public class SimulatedYoloCamera : MonoBehaviour
 {
     [Header("Camera simulation")]
     public float maxVisibleDistance = 30f;
+    [Tooltip("Current horizontal FOV; randomized per training episode when enabled.")]
     public float horizontalFOV = 40f;
+    [Tooltip("Physical camera frame width / height. The robot stream is 320 / 240.")]
     [Min(0.1f)] public float cameraAspectRatio = 4f / 3f;
+
+    [Header("Domain randomization")]
+    public bool randomizeHorizontalFOV = true;
+    [Tooltip("Horizontal FOV range sampled once at the start of each training episode.")]
+    public Vector2 horizontalFOVRange = new Vector2(35f, 55f);
 
     [Header("References")]
     public Transform targetBall;
     public LayerMask obstacleLayer;
+
+    public virtual void RandomizeDomainParameters()
+    {
+        if (!randomizeHorizontalFOV)
+        {
+            return;
+        }
+
+        float minimum = Mathf.Clamp(Mathf.Min(horizontalFOVRange.x, horizontalFOVRange.y), 1f, 179f);
+        float maximum = Mathf.Clamp(Mathf.Max(horizontalFOVRange.x, horizontalFOVRange.y), minimum, 179f);
+        horizontalFOV = UnityEngine.Random.Range(minimum, maximum);
+    }
 
     public virtual (float angle, float areaRatio, float aspectRatio, bool visible) GetTargetInfo()
     {
@@ -126,7 +145,11 @@ public class SimulatedYoloCamera : MonoBehaviour
 
         normalizedAngle = Mathf.Clamp((minX + maxX) - 1f, -1f, 1f);
         areaRatio = Mathf.Clamp01(boxWidth * boxHeight);
-        aspectRatio = boxHeight > 0.0001f ? boxWidth / boxHeight : 0f;
+        // boxWidth/boxHeight is measured in normalized viewport units. Multiplying
+        // by frame width/height makes it identical to the real pixel bbox ratio.
+        aspectRatio = boxHeight > 0.0001f
+            ? boxWidth * cameraAspectRatio / boxHeight
+            : 0f;
         return boxWidth > 0f && boxHeight > 0f;
     }
 

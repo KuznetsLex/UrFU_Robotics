@@ -142,6 +142,11 @@ namespace Team11.Ros
             return (normalizedAngle, bboxAreaRatio, bboxAspectRatio, true);
         }
 
+        public override void RandomizeDomainParameters()
+        {
+            // Physical camera intrinsics are fixed at runtime.
+        }
+
         public bool TryGetFreshPacket(out YoloDataPacket packet)
         {
             packet = latestPacket;
