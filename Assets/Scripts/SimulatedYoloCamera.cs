@@ -11,7 +11,7 @@ public class SimulatedYoloCamera : MonoBehaviour
     [Tooltip("Радиус мяча в метрах (используется для вычисления площади проекции)")]
     public float ballRadius = 0.005f;
     [Tooltip("Соотношение сторон изображения (ширина/высота)")]
-    public float aspectRatio = 360f / 240f; // 1.333f
+    public float aspectRatio = 320f / 240f; // 1.333f
 
     [Header("References")]
     public Transform targetBall;
