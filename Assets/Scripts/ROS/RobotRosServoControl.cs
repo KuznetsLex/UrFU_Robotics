@@ -9,6 +9,16 @@ namespace Team11.Ros
     public sealed class RobotRosServoControl : MonoBehaviour
     {
         private const string JointCommandTopic = "/cmd_servo_angles";
+        private const float BaseMinAngle = 0f;
+        private const float BaseMaxAngle = 180f;
+        private const float ShoulderMinAngle = 20f;
+        private const float ShoulderMaxAngle = 160f;
+        private const float ElbowMinAngle = 0f;
+        private const float ElbowMaxAngle = 180f;
+        private const float ClawMinAngle = 44f;
+        private const float ClawMaxAngle = 105f;
+        private const float CameraMinAngle = 0f;
+        private const float CameraMaxAngle = 180f;
 
         private static readonly string[] JointNames =
         {
@@ -20,19 +30,19 @@ namespace Team11.Ros
         };
 
         [Header("Servo target angles (degrees)")]
-        [SerializeField, Range(0f, 180f)]
+        [SerializeField, Range(BaseMinAngle, BaseMaxAngle)]
         private float baseAngle = 90f;
 
-        [SerializeField, Range(20f, 160f)]
+        [SerializeField, Range(ShoulderMinAngle, ShoulderMaxAngle)]
         private float shoulderAngle = 150f;
 
-        [SerializeField, Range(0f, 180f)]
+        [SerializeField, Range(ElbowMinAngle, ElbowMaxAngle)]
         private float elbowAngle = 90f;
 
-        [SerializeField, Range(44f, 105f)]
+        [SerializeField, Range(ClawMinAngle, ClawMaxAngle)]
         private float clawAngle = 50f;
 
-        [SerializeField, Range(0f, 180f)]
+        [SerializeField, Range(CameraMinAngle, CameraMaxAngle)]
         private float cameraAngle = 90f;
 
         private ROSConnection ros;
@@ -40,7 +50,7 @@ namespace Team11.Ros
 
         public string Status => status;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
         {
             if (FindAnyObjectByType<RobotRosServoControl>() != null)
@@ -48,9 +58,7 @@ namespace Team11.Ros
                 return;
             }
 
-            var instance = new GameObject("Physical Robot ROS Servo Control");
-            DontDestroyOnLoad(instance);
-            instance.AddComponent<RobotRosServoControl>();
+            ROSConnection.GetOrCreateInstance().gameObject.AddComponent<RobotRosServoControl>();
         }
 
         private void Awake()

@@ -62,7 +62,7 @@ public class VirtualSensors : MonoBehaviour
         out float ultrasonicMeters,
         out bool leftIrTriggered,
         out bool rightIrTriggered,
-        out bool gripperIrTriggered)
+        out bool centerIrTriggered)
     {
         bool hasSensorPoints = ultrasonicPoint != null ||
             leftIRPoint != null ||
@@ -72,7 +72,7 @@ public class VirtualSensors : MonoBehaviour
         ultrasonicMeters = GetUltrasonicMinDistance();
         leftIrTriggered = CastRay(leftIRPoint, irDistance);
         rightIrTriggered = CastRay(rightIRPoint, irDistance);
-        gripperIrTriggered = CastRay(gripperIRPoint, gripperDistance);
+        centerIrTriggered = CastRay(centerIRPoint, irDistance);
         return hasSensorPoints;
     }
 

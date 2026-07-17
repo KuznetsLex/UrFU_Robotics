@@ -1,5 +1,4 @@
 using RosMessageTypes.Geometry;
-using RosMessageTypes.Std;
 using Unity.Robotics.ROSTCPConnector;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -18,7 +17,6 @@ namespace Team11.Ros
         private const int RobotTcpPort = 10000;
         private const string CommandTopic = "/cmd_vel";
         private const string SensorDataTopic = "/sensor/data";
-        private const string GripperIrTopic = "/sensor/gripper_ir";
 
         private const float LinearSpeedMetersPerSecond = 0.15f;
         private const float AngularSpeedRadiansPerSecond = 0.8f;
@@ -32,7 +30,7 @@ namespace Team11.Ros
         private double ultrasonicMeters;
         private bool leftIrTriggered;
         private bool rightIrTriggered;
-        private bool gripperIrTriggered;
+        private bool centerIrTriggered;
         private float lastSensorMessageTime = -1f;
         private VirtualSensors simulationSensors;
 
@@ -58,7 +56,6 @@ namespace Team11.Ros
             ros.ShowHud = true;
             ros.RegisterPublisher<TwistMsg>(CommandTopic, queue_size: 1);
             ros.Subscribe<QuaternionMsg>(SensorDataTopic, OnSensorData);
-            ros.Subscribe<Int32Msg>(GripperIrTopic, OnGripperIr);
         }
 
         private void Update()
@@ -151,13 +148,7 @@ namespace Team11.Ros
             ultrasonicMeters = message.x;
             leftIrTriggered = message.y >= 0.5d;
             rightIrTriggered = message.z >= 0.5d;
-            gripperIrTriggered = message.w >= 0.5d;
-            lastSensorMessageTime = Time.unscaledTime;
-        }
-
-        private void OnGripperIr(Int32Msg message)
-        {
-            gripperIrTriggered = message.data != 0;
+            centerIrTriggered = message.w >= 0.5d;
             lastSensorMessageTime = Time.unscaledTime;
         }
 
@@ -193,20 +184,20 @@ namespace Team11.Ros
             double displayUltrasonicMeters = ultrasonicMeters;
             bool displayLeftIr = leftIrTriggered;
             bool displayRightIr = rightIrTriggered;
-            bool displayGripperIr = gripperIrTriggered;
+            bool displayCenterIr = centerIrTriggered;
             string dataSource = hasRobotSensorData ? "ROBOT" : "NO DATA";
 
             if (!hasRobotSensorData && TryReadSimulationSensors(
                     out float simulationUltrasonicMeters,
                     out bool simulationLeftIr,
                     out bool simulationRightIr,
-                    out bool simulationGripperIr))
+                    out bool simulationCenterIr))
             {
                 hasDisplayData = true;
                 displayUltrasonicMeters = simulationUltrasonicMeters;
                 displayLeftIr = simulationLeftIr;
                 displayRightIr = simulationRightIr;
-                displayGripperIr = simulationGripperIr;
+                displayCenterIr = simulationCenterIr;
                 dataSource = "SIMULATION";
             }
 
@@ -220,7 +211,9 @@ namespace Team11.Ros
             GUI.Label(new Rect(panel.x + 12, panel.y + 64, width - 24, 20), $"State: {state}");
 
             string sensorState = hasDisplayData
-                ? $"Ultrasonic: {displayUltrasonicMeters:F2} m"
+                ? $"Ultrasonic: {displayUltrasonicMeters:F2} m  |  " +
+                  $"raw IR L:{(displayLeftIr ? 1 : 0)} " +
+                  $"R:{(displayRightIr ? 1 : 0)} C:{(displayCenterIr ? 1 : 0)}"
                 : "Sensors: no robot connection or simulation provider";
             GUI.Label(new Rect(panel.x + 12, panel.y + 86, width - 24, 20), sensorState);
 
@@ -244,16 +237,16 @@ namespace Team11.Ros
                 displayRightIr);
             DrawIrIndicator(
                 new Rect(indicatorsX + (indicatorWidth + indicatorGap) * 2f, panel.y + 130, indicatorWidth, 28),
-                "IR gripper",
+                "IR center",
                 hasDisplayData,
-                displayGripperIr);
+                displayCenterIr);
         }
 
         private bool TryReadSimulationSensors(
             out float simulationUltrasonicMeters,
             out bool simulationLeftIr,
             out bool simulationRightIr,
-            out bool simulationGripperIr)
+            out bool simulationCenterIr)
         {
             if (simulationSensors == null)
             {
@@ -266,13 +259,13 @@ namespace Team11.Ros
                     out simulationUltrasonicMeters,
                     out simulationLeftIr,
                     out simulationRightIr,
-                    out simulationGripperIr);
+                    out simulationCenterIr);
             }
 
             simulationUltrasonicMeters = 0f;
             simulationLeftIr = false;
             simulationRightIr = false;
-            simulationGripperIr = false;
+            simulationCenterIr = false;
             return false;
         }
 
