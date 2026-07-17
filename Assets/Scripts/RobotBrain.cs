@@ -111,6 +111,7 @@ public class RobotBrain : Agent
     private float prevSteer;
     private float prevAbsAngle = 180f;
     private bool grabZoneRewardGranted;
+    private int previousGripCommand = 0; // Предыдущая команда клешни (0 – ничего, 1 – захват, 2 – отпустить)
 
     // Статистика эпизода для TensorBoard
     private Dictionary<string, float> rewardSumDict;
@@ -220,6 +221,7 @@ public class RobotBrain : Agent
         lastDistanceToBall = ball != null && holdPoint != null
             ? Vector3.Distance(holdPoint.position, ball.position)
             : 0f;
+        previousGripCommand = 0;
     }
 
     private void ResetBall()
@@ -245,10 +247,10 @@ public class RobotBrain : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // Ультразвук (сырое расстояние, без нормализации)
+        // 1. Ультразвук (сырое расстояние)
         sensor.AddObservation(sensors.GetUltrasonicDistance());
 
-        // Информация о цели с YOLO-камеры (возвращает угол и площадь)
+        // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость)
         var targetInfo = yoloCamera != null
             ? yoloCamera.GetTargetInfo()
             : (angle: 0f, area: 0f, visible: false);
@@ -265,12 +267,19 @@ public class RobotBrain : Agent
         sensor.AddObservation(targetInfo.visible ? targetInfo.area : lastKnownArea);
         sensor.AddObservation(targetInfo.visible ? 1f : 0f);
 
-        // Состояние клешни (открыта/закрыта)
+        // 3. Состояние клешни (открыта/закрыта)
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
         sensor.AddObservation(gripper != null && gripper.IsOpen ? 1f : 0f);
 
-        // Доля шагов без обнаружения цели
+        // 4. Доля шагов без обнаружения цели
         sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / noDetectionSteps));
+
+        // ----- 5. ПРЕДЫДУЩИЕ ДЕЙСТВИЯ (только один предыдущий шаг) -----
+        // Газ и руль с учётом клиппинга
+        sensor.AddObservation(prevGas);
+        sensor.AddObservation(prevSteer);
+        // Команда клешни
+        sensor.AddObservation(previousGripCommand);
     }
 
     // ==================== ПРИНЯТИЕ РЕШЕНИЙ ====================
@@ -293,20 +302,23 @@ public class RobotBrain : Agent
         float steer = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
         int gripCommand = actions.DiscreteActions[0];
 
-        trackController.Move(gas, steer);
+        // Применяем клиппинг газа с учётом maxLinearCmd (как в TrackController)
+        float clampedGas = Mathf.Clamp(gas, -trackController.maxLinearCmd, trackController.maxLinearCmd);
+        float clampedSteer = Mathf.Clamp(steer, -1f, 1f);
+
+        // Передаём команды в драйвер гусениц
+        trackController.Move(clampedGas, clampedSteer);
 
         // ---------- НАГРАДЫ И ШТРАФЫ (каждый шаг) ----------
 
         // 1. Штраф за каждый шаг
         AddRewardWithStats("StepPenalty", stepPenalty);
 
-        // 2. Штраф за резкие изменения управления
-        float gasDelta = Mathf.Abs(gas - prevGas);
-        float steerDelta = Mathf.Abs(steer - prevSteer);
+        // 2. Штраф за резкие изменения управления (используем предыдущие значения)
+        float gasDelta = Mathf.Abs(clampedGas - prevGas);
+        float steerDelta = Mathf.Abs(clampedSteer - prevSteer);
         float smoothnessPenalty = -smoothnessPenaltyScale * (gasDelta + steerDelta);
         AddRewardWithStats("SmoothnessPenalty", smoothnessPenalty);
-        prevGas = gas;
-        prevSteer = steer;
 
         // 3. Награда за уменьшение угла до мяча (если цель видна)
         if (targetVisible)
@@ -329,7 +341,7 @@ public class RobotBrain : Agent
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
         if (gripper != null)
         {
-            if (!grabZoneRewardGranted && ball != null && holdPoint != null && 
+            if (!grabZoneRewardGranted && ball != null && holdPoint != null &&
                 Vector3.Distance(holdPoint.position, ball.position) < grabZoneRadius)
             {
                 AddRewardWithStats("GrabZoneReward", grabAttemptReward);
@@ -337,7 +349,7 @@ public class RobotBrain : Agent
             }
         }
 
-        // 5. Награда за приближение к мячу
+        // 5. Награда за приближение к мячу (реальное расстояние)
         if (ball != null)
         {
             float currentDistance = Vector3.Distance(holdPoint.position, ball.position);
@@ -381,6 +393,11 @@ public class RobotBrain : Agent
                 }
             }
         }
+
+        // ---------- СОХРАНЯЕМ ТЕКУЩИЕ ДЕЙСТВИЯ КАК ПРЕДЫДУЩИЕ ДЛЯ СЛЕДУЮЩЕГО ШАГА ----------
+        prevGas = clampedGas;
+        prevSteer = clampedSteer;
+        previousGripCommand = gripCommand;
 
         // ---------- ПРОВЕРКИ ЗАВЕРШЕНИЯ ЭПИЗОДА ----------
 
@@ -435,17 +452,26 @@ public class RobotBrain : Agent
         if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) steer -= 1f;
         if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) steer += 1f;
 
+        // Клиппинг для соответствия с OnActionReceived
+        float clampedGas = Mathf.Clamp(gas, -trackController.maxLinearCmd, trackController.maxLinearCmd);
+        float clampedSteer = Mathf.Clamp(steer, -1f, 1f);
+
         var continuousActions = actionsOut.ContinuousActions;
         var discreteActions = actionsOut.DiscreteActions;
-        continuousActions[0] = gas;
-        continuousActions[1] = steer;
+        continuousActions[0] = clampedGas;
+        continuousActions[1] = clampedSteer;
 
-        if (keyboard.spaceKey.wasPressedThisFrame)
-            discreteActions[0] = 1;
+        int gripCommand = 0;
+        if (keyboard.gKey.wasPressedThisFrame)
+            gripCommand = 1;
         else if (keyboard.rKey.wasPressedThisFrame)
-            discreteActions[0] = 2;
-        else
-            discreteActions[0] = 0;
+            gripCommand = 2;
+        discreteActions[0] = gripCommand;
+
+        // Обновляем историю для согласованности наблюдений в эвристическом режиме
+        prevGas = clampedGas;
+        prevSteer = clampedSteer;
+        previousGripCommand = gripCommand;
     }
 
     // ==================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ СТАТИСТИКИ ====================
