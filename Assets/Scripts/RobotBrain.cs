@@ -40,6 +40,15 @@ public class RobotBrain : Agent
     public bool addUltrasonicNoise = true;
     public bool enableBurstDropout = true;
     public bool enableCommandLatency = true;
+    [Header("Sensor Faults")]
+    public bool enableIRFaults = true;
+    public float irFaultProbability = 0.1f;
+
+    public bool enableUltrasonicFaults = true;
+    public float ultrasonicFaultProbability = 0.15f;
+
+    public bool enableYoloDistanceNoise = true;
+    public float yoloDistanceNoiseRange = 0.1f;
     private Queue<float[]> actionBuffer = new Queue<float[]>();
     private int currentActionLatency = 0;
     private Rigidbody rb;
@@ -136,7 +145,7 @@ public class RobotBrain : Agent
         ResetBall();
         if (enableCommandLatency && isTraining)
         {
-            currentActionLatency = UnityEngine.Random.Range(8, 14);
+            currentActionLatency = UnityEngine.Random.Range(8, 14); // рандомизируются шаги. Шаг = 20 мс. 160, 300
             actionBuffer.Clear();
             for (int i = 0; i < currentActionLatency; i++)
                 actionBuffer.Enqueue(new float[] { 0f, 0f });
@@ -186,14 +195,34 @@ public class RobotBrain : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1. УЛЬТРАЗВУК С ШУМОМ (±5%)
-        float noiseUS = (addUltrasonicNoise && isTraining) ? UnityEngine.Random.Range(-0.05f, 0.05f) : 0f;
-        float noisyDistance = Mathf.Clamp01(sensors.GetUltrasonicNormalized() + noiseUS);
-        sensor.AddObservation(noisyDistance);
 
-        sensor.AddObservation(sensors.GetLeftIR());
-        sensor.AddObservation(sensors.GetRightIR());
-        sensor.AddObservation(sensors.GetGripperIR());
+        // 1. УЛЬТРАЗВУК С ШУМОМ (±5%)
+        float ultrasonic = sensors.GetUltrasonicNormalized();
+
+        // Шум ±5% (если включён через addUltrasonicNoise)
+        if (addUltrasonicNoise && isTraining)
+            ultrasonic += Random.Range(-0.05f, 0.05f);
+
+        // Сбой с вероятностью 15%
+        if (enableUltrasonicFaults && isTraining && Random.value < ultrasonicFaultProbability)
+            ultrasonic = Random.value; // случайное значение от 0 до 1
+
+        sensor.AddObservation(Mathf.Clamp01(ultrasonic));
+
+        float leftIR = sensors.GetLeftIR();
+        float rightIR = sensors.GetRightIR();
+        float gripperIR = sensors.GetGripperIR();
+
+        if (enableIRFaults && isTraining)
+        {
+            if (Random.value < irFaultProbability) leftIR = 1f - leftIR;
+            if (Random.value < irFaultProbability) rightIR = 1f - rightIR;
+            if (Random.value < irFaultProbability) gripperIR = 1f - gripperIR;
+        }
+
+        sensor.AddObservation(leftIR);
+        sensor.AddObservation(rightIR);
+        sensor.AddObservation(gripperIR);
 
         // 2. ЛОГИКА ПАЧЕЧНЫХ ПОТЕРЬ YOLO (Burst Dropout)
         // Уменьшаем счётчик, если активен
@@ -212,6 +241,13 @@ public class RobotBrain : Agent
             ? yoloCamera.GetTargetInfo()
             : (angle: 0f, distance: 1f, visible: false);
 
+        float yoloDistance = targetInfo.distance;
+        if (enableYoloDistanceNoise && isTraining)
+        {
+            yoloDistance += Random.Range(-yoloDistanceNoiseRange, yoloDistanceNoiseRange);
+            yoloDistance = Mathf.Clamp01(yoloDistance);
+        }
+
         // Применяем dropout к видимости
         bool ballVisible = targetInfo.visible && (burstDropoutRemaining == 0);
 
@@ -219,7 +255,7 @@ public class RobotBrain : Agent
         if (ballVisible)
         {
             lastKnownAngle = targetInfo.angle;
-            lastKnownDistance = targetInfo.distance;
+            lastKnownDistance = yoloDistance; // <-- зашумлённое значение
             timeSinceLastDetection = 0f;
         }
         else
@@ -229,7 +265,7 @@ public class RobotBrain : Agent
 
         // Отправляем наблюдения (используем ballVisible вместо targetInfo.visible)
         sensor.AddObservation(ballVisible ? targetInfo.angle : lastKnownAngle);
-        sensor.AddObservation(ballVisible ? targetInfo.distance : lastKnownDistance);
+        sensor.AddObservation(ballVisible ? yoloDistance : lastKnownDistance);
         sensor.AddObservation(ballVisible ? 1f : 0f);
         sensor.AddObservation(hasBall ? 1f : 0f);
 
