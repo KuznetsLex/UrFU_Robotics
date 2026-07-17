@@ -21,7 +21,7 @@ public class SimulatedYoloCamera : MonoBehaviour
     /// Возвращает информацию о цели: нормализованный угол, долю площади изображения,
     /// занимаемую проекцией мяча, и флаг видимости.
     /// </summary>
-    public (float angle, float area, bool visible) GetTargetInfo()
+    public virtual (float angle, float area, bool visible) GetTargetInfo()
     {
         if (targetBall == null || maxVisibleDistance <= 0f || horizontalFOV <= 0f)
             return (-1f, 0f, false);

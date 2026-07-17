@@ -1,0 +1,4 @@
+# Runtime dependencies for tools/yolo/yolo_vision_node.py.
+numpy>=2,<3
+opencv-python>=4.10,<5
+onnxruntime>=1.20,<2
