@@ -67,7 +67,7 @@ public class VirtualSensors : MonoBehaviour
         bool hasSensorPoints = ultrasonicPoint != null ||
             leftIRPoint != null ||
             rightIRPoint != null ||
-            gripperIRPoint != null;
+            centerIRPoint != null;
 
         ultrasonicMeters = GetUltrasonicMinDistance();
         leftIrTriggered = CastRay(leftIRPoint, irDistance);
