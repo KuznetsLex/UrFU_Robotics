@@ -75,6 +75,17 @@ public class RobotBrain : Agent
     [Tooltip("Штраф за неудачную попытку захвата (клешня закрыта или мяч вне зоны)")]
     public float failedGrabPenalty = -0.1f;
 
+    // ==================== ШТРАФ ЗА СКОРОСТЬ В ЗОНЕ ЗАХВАТА ====================
+    [Header("Speed Penalty in Grab Zone")]
+    [Tooltip("Порог линейной скорости (единицы/с, 1 = 1 дм), выше которого начисляется штраф")]
+    public float speedPenaltyThresholdLinear = 0.2f;   // 2 дм/с, например
+
+    [Tooltip("Порог угловой скорости (градусы/с), выше которого начисляется штраф")]
+    public float speedPenaltyThresholdAngular = 30f;   // 30 градусов/с
+
+    [Tooltip("Величина штрафа за превышение любого порога скорости (отрицательное число)")]
+    public float speedPenaltyAmount = -0.05f;
+
     // ==================== РАНДОМИЗАЦИЯ СТАРТОВЫХ ПОЗИЦИЙ ====================
     [Header("Spawn Randomization")]
     [Tooltip("Половина размера спавна по осям X и Z (прямоугольная область)")]
@@ -361,6 +372,27 @@ public class RobotBrain : Agent
         // 6. Штрафы за близость к стенам (ультразвук)
         if (sensors.GetUltrasonicDistance() < 0.5f)
             AddRewardWithStats("WallUltrasonic", wallPenalty * wallUltrasonicMultiplier);
+
+        // 7. Штраф за высокую скорость в зоне захвата
+        // Проверяем, находимся ли в зоне захвата (используем расстояние от holdPoint до мяча)
+        if (ball != null && holdPoint != null &&
+            Vector3.Distance(holdPoint.position, ball.position) < grabZoneRadius)
+        {
+            // Получаем текущие скорости
+            float linearSpeed = rb.linearVelocity.magnitude;          // в единицах/с
+            float angularSpeed = rb.angularVelocity.magnitude * Mathf.Rad2Deg; // переводим в градусы/с
+
+            bool speedExceeded = false;
+            if (linearSpeed > speedPenaltyThresholdLinear)
+                speedExceeded = true;
+            if (angularSpeed > speedPenaltyThresholdAngular)
+                speedExceeded = true;
+
+            if (speedExceeded)
+            {
+                AddRewardWithStats("SpeedPenaltyInGrabZone", speedPenaltyAmount);
+            }
+        }
 
         // ---------- ОБРАБОТКА КОМАНД КЛЕШНИ ----------
 
