@@ -136,10 +136,25 @@ make yolo
 http://192.168.2.158:10002/frame.jpg
 ```
 
+Если основной адрес не отвечает, Python автоматически переключается на:
+
+```text
+http://192.168.2.158:8081/
+```
+
+Корень порта 8081 отдаёт непрерывный MJPEG-поток. В HUD активный источник
+отмечается как `primary` или `MJPEG :8081`.
+
 Запуск с другим адресом:
 
 ```powershell
-make yolo CAMERA_URL="http://192.168.137.248:8080/?action=stream"
+make yolo CAMERA_URL="http://192.168.137.248:8081/"
+```
+
+Отдельный fallback можно переопределить так:
+
+```powershell
+make yolo FALLBACK_CAMERA_URL="http://robot:8081/"
 ```
 
 Режим источника определяется автоматически:
@@ -147,11 +162,17 @@ make yolo CAMERA_URL="http://192.168.137.248:8080/?action=stream"
 - URL с окончанием `.jpg` или `.jpeg` считается последовательностью снимков;
 - остальные URL считаются MJPEG или видеопотоком.
 
+Из bounding box в политику передаются три признака:
+
+- горизонтальный угол: `-1` слева, `0` по центру, `+1` справа;
+- доля площади кадра: `(bbox_width * bbox_height) / (frame_width * frame_height)`;
+- отношение сторон bounding box: `bbox_width / bbox_height`.
+
 При необходимости режим можно указать явно:
 
 ```powershell
 make yolo CAMERA_URL="http://robot/frame.jpg" SOURCE_MODE=snapshot
-make yolo CAMERA_URL="http://robot:8080/?action=stream" SOURCE_MODE=stream
+make yolo CAMERA_URL="http://robot:8081/" SOURCE_MODE=stream
 ```
 
 ## Настройка модели
@@ -174,7 +195,7 @@ data/onnx_vino/onnx26/best_int8.onnx
 2 — robot-claw
 ```
 
-По умолчанию детектор передаёт только класс `ball`.
+По умолчанию детектор передаёт классы `ball` и `cube`.
 
 Запуск другой модели:
 
@@ -194,6 +215,8 @@ make yolo MODEL="data/another_model.onnx"
 - UDP-приёмник `RealVision` на порту `5005`;
 - зелёную рамку вокруг обнаруженного мяча;
 - confidence и статус соединения с YOLO.
+- долю площади кадра, занятую bounding box, и отношение его ширины к высоте;
+- горизонтальное смещение цели (`-1` — слева, `0` — по центру, `+1` — справа).
 
 Отдельное окно OpenCV можно отключить:
 

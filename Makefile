@@ -6,6 +6,7 @@ YOLO_RUNNER := $(YOLO_DIR)\run_yolo.ps1
 YOLO_SCRIPT := $(YOLO_DIR)\yolo_vision_node.py
 PYTHON := $(YOLO_DIR)\.venv\Scripts\python.exe
 CAMERA_URL ?=
+FALLBACK_CAMERA_URL ?=
 MODEL ?=
 SOURCE_MODE ?= auto
 
@@ -23,16 +24,17 @@ help:
 	@Write-Host ""
 	@Write-Host "Optional overrides:"
 	@Write-Host '  make yolo CAMERA_URL="http://robot/frame.jpg"'
+	@Write-Host '  make yolo FALLBACK_CAMERA_URL="http://robot:8081/"'
 	@Write-Host '  make yolo MODEL="data/model.onnx" SOURCE_MODE=stream'
 
 setup:
 	@& "$(YOLO_RUNNER)" -SetupOnly
 
 yolo: setup
-	@& "$(YOLO_RUNNER)" -SourceMode "$(SOURCE_MODE)" $(if $(CAMERA_URL),-StreamUrl "$(CAMERA_URL)",) $(if $(MODEL),-Model "$(MODEL)",)
+	@& "$(YOLO_RUNNER)" -SourceMode "$(SOURCE_MODE)" $(if $(CAMERA_URL),-StreamUrl "$(CAMERA_URL)",) $(if $(FALLBACK_CAMERA_URL),-FallbackStreamUrl "$(FALLBACK_CAMERA_URL)",) $(if $(MODEL),-Model "$(MODEL)",)
 
 yolo-headless: setup
-	@& "$(YOLO_RUNNER)" -NoDisplay -SourceMode "$(SOURCE_MODE)" $(if $(CAMERA_URL),-StreamUrl "$(CAMERA_URL)",) $(if $(MODEL),-Model "$(MODEL)",)
+	@& "$(YOLO_RUNNER)" -NoDisplay -SourceMode "$(SOURCE_MODE)" $(if $(CAMERA_URL),-StreamUrl "$(CAMERA_URL)",) $(if $(FALLBACK_CAMERA_URL),-FallbackStreamUrl "$(FALLBACK_CAMERA_URL)",) $(if $(MODEL),-Model "$(MODEL)",)
 
 check: setup
 	@& "$(PYTHON)" -m py_compile "$(YOLO_SCRIPT)"

@@ -117,7 +117,8 @@ public class RobotBrain : Agent
     private bool targetVisible;
     private float stepsSinceLastDetection;
     private float lastKnownAngle;
-    private float lastKnownArea = 0f;
+    private float lastKnownAreaRatio;
+    private float lastKnownAspectRatio;
     private float prevGas;
     private float prevSteer;
     private float prevAbsAngle = 180f;
@@ -224,7 +225,8 @@ public class RobotBrain : Agent
         targetVisible = false;
         stepsSinceLastDetection = 0f;
         lastKnownAngle = 0f;
-        lastKnownArea = 0f;
+        lastKnownAreaRatio = 0f;
+        lastKnownAspectRatio = 0f;
         prevGas = 0f;
         prevSteer = 0f;
         prevAbsAngle = 180f;
@@ -264,18 +266,20 @@ public class RobotBrain : Agent
         // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость)
         var targetInfo = yoloCamera != null
             ? yoloCamera.GetTargetInfo()
-            : (angle: 0f, area: 0f, visible: false);
+            : (angle: 0f, areaRatio: 0f, aspectRatio: 0f, visible: false);
 
         targetVisible = targetInfo.visible;
         if (targetInfo.visible)
         {
             lastKnownAngle = targetInfo.angle;
-            lastKnownArea = targetInfo.area;
+            lastKnownAreaRatio = targetInfo.areaRatio;
+            lastKnownAspectRatio = targetInfo.aspectRatio;
             stepsSinceLastDetection = 0f;
         }
 
         sensor.AddObservation(targetInfo.visible ? targetInfo.angle : lastKnownAngle);
-        sensor.AddObservation(targetInfo.visible ? targetInfo.area : lastKnownArea);
+        sensor.AddObservation(targetInfo.visible ? targetInfo.areaRatio : lastKnownAreaRatio);
+        sensor.AddObservation(targetInfo.visible ? targetInfo.aspectRatio : lastKnownAspectRatio);
         sensor.AddObservation(targetInfo.visible ? 1f : 0f);
 
         // 3. Состояние клешни (открыта/закрыта)

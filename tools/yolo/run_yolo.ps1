@@ -1,5 +1,6 @@
 param(
     [string]$StreamUrl = "",
+    [string]$FallbackStreamUrl = "",
     [string]$Model = "",
     [ValidateSet("auto", "stream", "snapshot")]
     [string]$SourceMode = "auto",
@@ -56,6 +57,7 @@ $arguments = @(
 )
 
 if ($StreamUrl) { $arguments += @("--stream-url", $StreamUrl) }
+if ($FallbackStreamUrl) { $arguments += @("--fallback-stream-url", $FallbackStreamUrl) }
 if ($Model) { $arguments += @("--model", $Model) }
 if ($NoDisplay) { $arguments += "--no-display" }
 if ($NoTrack) { $arguments += "--no-track" }

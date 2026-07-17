@@ -12,7 +12,8 @@ namespace Team11.Ros
     public sealed class YoloDataPacket
     {
         public float angle;
-        public float distance;
+        public float bbox_area_ratio;
+        public float bbox_aspect_ratio;
         public float sees;
         public float conf;
         public float w;
@@ -36,17 +37,12 @@ namespace Team11.Ros
         [SerializeField] private int udpPort = 5005;
         [SerializeField, Min(0.05f)] private float packetTimeoutSeconds = 0.75f;
 
-        [Header("Distance calibration")]
-        [Tooltip("Bounding-box height / frame height when the target is considered far.")]
-        [SerializeField, Range(0f, 1f)] private float farBoxHeightRatio = 0f;
-        [Tooltip("Bounding-box height / frame height when the target is considered near.")]
-        [SerializeField, Range(0f, 1f)] private float nearBoxHeightRatio = 1f;
-
         [Header("Live telemetry")]
         [SerializeField] private bool useYOLO;
         [SerializeField] private bool seesBall;
         [SerializeField, Range(-1f, 1f)] private float normalizedAngle;
-        [SerializeField, Range(0f, 1f)] private float normalizedDistance = 1f;
+        [SerializeField, Range(0f, 1f)] private float bboxAreaRatio;
+        [SerializeField] private float bboxAspectRatio;
         [SerializeField, Range(0f, 1f)] private float confidence;
         [SerializeField] private string receiverStatus = "Waiting for YOLO";
 
@@ -98,7 +94,8 @@ namespace Team11.Ros
                 {
                     seesBall = false;
                     normalizedAngle = 0f;
-                    normalizedDistance = 1f;
+                    bboxAreaRatio = 0f;
+                    bboxAspectRatio = 0f;
                     receiverStatus = "YOLO packets timed out";
                 }
                 return;
@@ -128,24 +125,21 @@ namespace Team11.Ros
             confidence = Mathf.Clamp01(packet.conf);
             normalizedAngle = seesBall ? Mathf.Clamp(packet.angle, -1f, 1f) : 0f;
 
-            // Python sends relative bounding-box height (large means near), while the
-            // trained RobotBrain camera contract uses normalized range (large means far).
-            normalizedDistance = seesBall
-                ? BoxHeightToNormalizedDistance(packet.distance)
-                : 1f;
+            bboxAreaRatio = seesBall ? Mathf.Clamp01(packet.bbox_area_ratio) : 0f;
+            bboxAspectRatio = seesBall ? Mathf.Max(0f, packet.bbox_aspect_ratio) : 0f;
             receiverStatus = seesBall
                 ? $"BALL  conf {confidence:F2}"
                 : "YOLO live - no ball";
         }
 
-        public override (float angle, float distance, bool visible) GetTargetInfo()
+        public override (float angle, float areaRatio, float aspectRatio, bool visible) GetTargetInfo()
         {
             if (!HasFreshPacket || !seesBall)
             {
-                return (0f, 1f, false);
+                return (0f, 0f, 0f, false);
             }
 
-            return (normalizedAngle, normalizedDistance, true);
+            return (normalizedAngle, bboxAreaRatio, bboxAspectRatio, true);
         }
 
         public bool TryGetFreshPacket(out YoloDataPacket packet)
@@ -157,20 +151,6 @@ namespace Team11.Ros
         public string GetReceiverStatus()
         {
             return receiverStatus;
-        }
-
-        private float BoxHeightToNormalizedDistance(float boxHeightRatio)
-        {
-            if (nearBoxHeightRatio <= farBoxHeightRatio)
-            {
-                return 1f - Mathf.Clamp01(boxHeightRatio);
-            }
-
-            // nearBoxHeightRatio maps to 0 (near), farBoxHeightRatio maps to 1 (far).
-            return Mathf.InverseLerp(
-                nearBoxHeightRatio,
-                farBoxHeightRatio,
-                Mathf.Clamp01(boxHeightRatio));
         }
 
         private void ReceiveLoop()

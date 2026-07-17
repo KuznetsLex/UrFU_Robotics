@@ -25,16 +25,18 @@ import numpy as np
 # Command-line arguments override these defaults.
 # =============================================================================
 DEFAULT_STREAM_URL = "http://192.168.2.158:10002/frame.jpg"
+DEFAULT_FALLBACK_STREAM_URL = "http://192.168.2.158:8081/"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL = PROJECT_ROOT / "data" / "onnx_vino" / "onnx26" / "best_int8.onnx"
 DEFAULT_SOURCE_MODE = "auto"  # auto, stream or snapshot
 DEFAULT_UDP_HOST = "127.0.0.1"
 DEFAULT_UDP_PORT = 5005
 DEFAULT_CONFIDENCE = 0.20
-DEFAULT_TARGET_CLASSES = (0,)  # 0=ball, 1=cube, 2=robot-claw
+DEFAULT_TARGET_CLASSES = (0, 1)  # 0=ball, 1=cube, 2=robot-claw
 DEFAULT_IMAGE_SIZE = 512
 DEFAULT_SNAPSHOT_FPS = 10.0
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 2.0
+DEFAULT_FAILURES_BEFORE_FALLBACK = 2
 # =============================================================================
 
 
@@ -252,12 +254,14 @@ class LatestFrameCapture:
     def __init__(
         self,
         url: str,
+        fallback_url: str,
         source_mode: str,
         snapshot_fps: float,
         request_timeout: float,
     ) -> None:
-        self.url = url
-        self.mode = self._resolve_mode(url, source_mode)
+        self.sources = [(url, self._resolve_mode(url, source_mode))]
+        if fallback_url and fallback_url != url:
+            self.sources.append((fallback_url, self._resolve_mode(fallback_url, "auto")))
         self.snapshot_interval = 1.0 / max(snapshot_fps, 0.1)
         self.request_timeout = request_timeout
         self._lock = threading.Lock()
@@ -307,17 +311,24 @@ class LatestFrameCapture:
             self._last_error = message
 
     def _run(self) -> None:
-        if self.mode == "snapshot":
-            self._run_snapshot_source()
-        else:
-            self._run_stream_source()
+        source_index = 0
+        while not self._stop.is_set():
+            url, mode = self.sources[source_index]
+            if mode == "snapshot":
+                self._run_snapshot_source(url)
+            else:
+                self._run_stream_source(url)
 
-    def _run_snapshot_source(self) -> None:
+            source_index = (source_index + 1) % len(self.sources)
+            self._stop.wait(0.2)
+
+    def _run_snapshot_source(self, url: str) -> None:
+        consecutive_failures = 0
         while not self._stop.is_set():
             started_at = time.monotonic()
             try:
                 request = urllib.request.Request(
-                    self.url,
+                    url,
                     headers={"Cache-Control": "no-cache", "User-Agent": "UrFU-YOLO/1.0"},
                 )
                 with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
@@ -326,31 +337,32 @@ class LatestFrameCapture:
                 if frame is None:
                     raise RuntimeError("camera response is not a JPEG image")
                 self._store(frame)
+                consecutive_failures = 0
             except Exception as error:  # Network failures are expected while the robot reconnects.
-                self._set_error(str(error))
+                consecutive_failures += 1
+                self._set_error(f"{url}: {error}")
+                if consecutive_failures >= DEFAULT_FAILURES_BEFORE_FALLBACK:
+                    return
 
             remaining = self.snapshot_interval - (time.monotonic() - started_at)
             self._stop.wait(max(remaining, 0.01))
 
-    def _run_stream_source(self) -> None:
-        while not self._stop.is_set():
-            capture = cv2.VideoCapture(self.url)
-            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            if not capture.isOpened():
-                self._set_error(f"cannot open video stream: {self.url}")
-                capture.release()
-                self._stop.wait(0.5)
-                continue
-
-            while not self._stop.is_set():
-                ok, frame = capture.read()
-                if not ok or frame is None:
-                    self._set_error("camera stream disconnected; reconnecting")
-                    break
-                self._store(frame)
-
+    def _run_stream_source(self, url: str) -> None:
+        capture = cv2.VideoCapture(url)
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if not capture.isOpened():
+            self._set_error(f"cannot open video stream: {url}")
             capture.release()
-            self._stop.wait(0.2)
+            return
+
+        while not self._stop.is_set():
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                self._set_error(f"camera stream disconnected: {url}")
+                break
+            self._store(frame)
+
+        capture.release()
 
 
 def parse_args() -> argparse.Namespace:
@@ -361,6 +373,11 @@ def parse_args() -> argparse.Namespace:
         "--stream-url",
         default=os.environ.get("ROBOT_CAMERA_URL", DEFAULT_STREAM_URL),
         help="MJPEG/video URL or repeatedly fetched JPEG URL",
+    )
+    parser.add_argument(
+        "--fallback-stream-url",
+        default=os.environ.get("ROBOT_CAMERA_FALLBACK_URL", DEFAULT_FALLBACK_STREAM_URL),
+        help="camera URL used after the primary source fails",
     )
     parser.add_argument(
         "--source-mode",
@@ -389,7 +406,8 @@ def detection_packet(
     height, width = frame.shape[:2]
     packet: dict[str, float] = {
         "angle": 0.0,
-        "distance": 0.0,
+        "bbox_area_ratio": 0.0,
+        "bbox_aspect_ratio": 0.0,
         "sees": 0.0,
         "conf": 0.0,
         "w": 0.0,
@@ -415,10 +433,13 @@ def detection_packet(
     box_height = max(0.0, y2 - y1)
     center_x = (x1 + x2) * 0.5
     confidence = best_detection.confidence
+    bbox_area_ratio = (box_width * box_height) / (width * height)
+    bbox_aspect_ratio = box_width / box_height if box_height > 0.0 else 0.0
 
     packet.update(
         angle=float(np.clip((center_x - width * 0.5) / (width * 0.5), -1.0, 1.0)),
-        distance=float(np.clip(box_height / height, 0.0, 1.0)),
+        bbox_area_ratio=float(np.clip(bbox_area_ratio, 0.0, 1.0)),
+        bbox_aspect_ratio=float(bbox_aspect_ratio),
         sees=1.0,
         conf=confidence,
         w=box_width,
@@ -490,12 +511,14 @@ def main() -> int:
         return 2
     print(f"Classes: {detector.names}")
     print(f"Camera: {args.stream_url} ({args.source_mode})")
+    print(f"Camera fallback: {args.fallback_stream_url}")
     print(f"Unity UDP: {args.udp_host}:{args.udp_port}")
     if not args.no_display:
         print("Press Q or Esc in the video window to stop.")
 
     capture = LatestFrameCapture(
         args.stream_url,
+        args.fallback_stream_url,
         args.source_mode,
         args.snapshot_fps,
         args.request_timeout,
