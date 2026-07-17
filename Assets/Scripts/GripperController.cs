@@ -60,6 +60,24 @@ public class GripperController : MonoBehaviour
         }
     }
 
+    public bool IsTargetInGrabZone()
+    {
+        if (ballInTrigger != null)
+            return true;
+
+        if (holdPoint == null)
+            return false;
+
+        Collider[] hitColliders = Physics.OverlapSphere(holdPoint.position, grabRadius);
+        foreach (var col in hitColliders)
+        {
+            if (col.CompareTag(targetTag))
+                return true;
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Вызовите этот метод, чтобы отпустить захваченный мяч
     /// </summary>
@@ -173,4 +191,6 @@ public class GripperController : MonoBehaviour
         if (keyboard.gKey.wasPressedThisFrame) Grab();
         if (keyboard.rKey.wasPressedThisFrame) Release();
     }
+
+    public bool IsGrabbing => isGrabbing;
 }
