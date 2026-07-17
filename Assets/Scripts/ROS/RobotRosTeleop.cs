@@ -14,7 +14,7 @@ namespace Team11.Ros
     public sealed class RobotRosTeleop : MonoBehaviour
     {
         private const string RobotIpAddress = "192.168.2.158";
-        private const int RobotTcpPort = 10000;
+        private const int RobotTcpPort = 10001;
         private const string CommandTopic = "/cmd_vel";
         private const string SensorDataTopic = "/sensor/data";
 
@@ -50,12 +50,21 @@ namespace Team11.Ros
         private void Awake()
         {
             ros = ROSConnection.GetOrCreateInstance();
+            EnsureCameraView(ros);
             ros.RosIPAddress = RobotIpAddress;
             ros.RosPort = RobotTcpPort;
             ros.ConnectOnStart = true;
             ros.ShowHud = true;
             ros.RegisterPublisher<TwistMsg>(CommandTopic, queue_size: 1);
             ros.Subscribe<QuaternionMsg>(SensorDataTopic, OnSensorData);
+        }
+
+        private static void EnsureCameraView(ROSConnection connection)
+        {
+            if (FindAnyObjectByType<RobotCameraView>() == null)
+            {
+                connection.gameObject.AddComponent<RobotCameraView>();
+            }
         }
 
         private void Update()
