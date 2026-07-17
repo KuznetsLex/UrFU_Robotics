@@ -116,3 +116,5 @@ InitTestScene*.unity*
 /results
 *.onnx
 *.onnx.meta
+/[Aa]ssets/ML-Agents/Timers
+/[Aa]ssets/ML-Agents/Timers.meta

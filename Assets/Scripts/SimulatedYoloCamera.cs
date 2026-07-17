@@ -7,14 +7,24 @@ public class SimulatedYoloCamera : MonoBehaviour
     public float maxVisibleDistance = 30f;
     public float horizontalFOV = 40f;
 
+    [Header("Object properties")]
+    [Tooltip("Радиус мяча в метрах (используется для вычисления площади проекции)")]
+    public float ballRadius = 0.005f;
+    [Tooltip("Соотношение сторон изображения (ширина/высота)")]
+    public float aspectRatio = 360f / 240f; // 1.333f
+
     [Header("References")]
     public Transform targetBall;
     public LayerMask obstacleLayer;
 
-    public (float angle, float distance, bool visible) GetTargetInfo()
+    /// <summary>
+    /// Возвращает информацию о цели: нормализованный угол, долю площади изображения,
+    /// занимаемую проекцией мяча, и флаг видимости.
+    /// </summary>
+    public (float angle, float area, bool visible) GetTargetInfo()
     {
         if (targetBall == null || maxVisibleDistance <= 0f || horizontalFOV <= 0f)
-            return (-1f, -1f, false);
+            return (-1f, 0f, false);
 
         Vector3 toTarget = targetBall.position - transform.position;
         float distance = toTarget.magnitude;
@@ -30,11 +40,21 @@ public class SimulatedYoloCamera : MonoBehaviour
         bool hasLineOfSight = inRange && inFov && HasLineOfSight(toTarget / distance, distance);
 
         if (!hasLineOfSight)
-            return (-1f, -1f, false);
+            return (-1f, 0f, false);
 
+        // Нормализуем угол
         float normalizedAngle = Mathf.Clamp(angleDegrees / halfFov, -1f, 1f);
-        float normalizedDistance = Mathf.Clamp01(distance / maxVisibleDistance);
-        return (normalizedAngle, normalizedDistance, hasLineOfSight);
+
+        // Вычисляем площадь проекции мяча как долю от всей площади изображения
+        float fovRad = horizontalFOV * 0.5f * Mathf.Deg2Rad;
+        float viewWidth = 2f * distance * Mathf.Tan(fovRad);
+        float viewHeight = viewWidth / aspectRatio;
+        float imageArea = viewWidth * viewHeight;          // площадь видимой области в мировых единицах
+        float projectedArea = Mathf.PI * ballRadius * ballRadius;
+        float areaFraction = projectedArea / imageArea;
+        areaFraction = Mathf.Clamp01(areaFraction);        // обрезаем, чтобы не выходило за [0,1]
+
+        return (normalizedAngle, areaFraction, true);
     }
 
     private bool HasLineOfSight(Vector3 direction, float distance)

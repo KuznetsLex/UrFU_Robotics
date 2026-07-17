@@ -106,7 +106,7 @@ public class RobotBrain : Agent
     private bool targetVisible;
     private float stepsSinceLastDetection;
     private float lastKnownAngle;
-    private float lastKnownDistance = 1f;
+    private float lastKnownArea = 0f;
     private float prevGas;
     private float prevSteer;
     private float prevAbsAngle = 180f;
@@ -212,7 +212,7 @@ public class RobotBrain : Agent
         targetVisible = false;
         stepsSinceLastDetection = 0f;
         lastKnownAngle = 0f;
-        lastKnownDistance = 1f;
+        lastKnownArea = 0f;
         prevGas = 0f;
         prevSteer = 0f;
         prevAbsAngle = 180f;
@@ -248,21 +248,21 @@ public class RobotBrain : Agent
         // Ультразвук (сырое расстояние, без нормализации)
         sensor.AddObservation(sensors.GetUltrasonicDistance());
 
-        // Информация о цели с YOLO-камеры
+        // Информация о цели с YOLO-камеры (возвращает угол и площадь)
         var targetInfo = yoloCamera != null
             ? yoloCamera.GetTargetInfo()
-            : (angle: 0f, distance: 1f, visible: false);
+            : (angle: 0f, area: 0f, visible: false);
 
         targetVisible = targetInfo.visible;
         if (targetInfo.visible)
         {
             lastKnownAngle = targetInfo.angle;
-            lastKnownDistance = targetInfo.distance;
+            lastKnownArea = targetInfo.area;
             stepsSinceLastDetection = 0f;
         }
 
         sensor.AddObservation(targetInfo.visible ? targetInfo.angle : lastKnownAngle);
-        sensor.AddObservation(targetInfo.visible ? targetInfo.distance : lastKnownDistance);
+        sensor.AddObservation(targetInfo.visible ? targetInfo.area : lastKnownArea);
         sensor.AddObservation(targetInfo.visible ? 1f : 0f);
 
         // Состояние клешни (открыта/закрыта)
