@@ -28,10 +28,13 @@ public class VirtualSensors : MonoBehaviour
     public float GetCenterIR() => CastRay(centerIRPoint, irDistance) ? 1f : 0f;
     public float GetGripperIR() => CastRay(gripperIRPoint, gripperDistance) ? 1f : 0f;
 
-    public float GetUltrasonicNormalized()
+    /// <summary>
+    /// Возвращает сырое расстояние до ближайшего препятствия в метрах (без нормализации).
+    /// Используется для наблюдений агента.
+    /// </summary>
+    public float GetUltrasonicDistance()
     {
-        float dist = GetUltrasonicMinDistance();
-        return Mathf.Clamp01(dist / ultrasonicMaxDistance);
+        return GetUltrasonicMinDistance();
     }
 
     private float GetUltrasonicMinDistance()
@@ -71,8 +74,8 @@ public class VirtualSensors : MonoBehaviour
 
         ultrasonicMeters = GetUltrasonicMinDistance();
         leftIrTriggered = CastRay(leftIRPoint, irDistance);
-        rightIrTriggered = CastRay(rightIRPoint, irDistance);
         centerIrTriggered = CastRay(centerIRPoint, irDistance);
+        rightIrTriggered = CastRay(rightIRPoint, irDistance);
         return hasSensorPoints;
     }
 

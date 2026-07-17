@@ -41,12 +41,12 @@ public class RobotBrain : Agent
     public Vector2 arenaHalfExtents = new Vector2(300f, 300f);
 
     [Tooltip("Порог падения по оси Y (ниже которого эпизод завершается)")]
-    public float fallDistance = 300f;
+    public float fallDistance = 3f;
 
     // ==================== ОГРАНИЧЕНИЯ ЭПИЗОДА ====================
     [Header("Ограничения эпизода")]
     [Tooltip("Максимальное количество шагов без обнаружения цели, после которого эпизод прерывается")]
-    public float noDetectionSteps = 100f;
+    public float noDetectionSteps = 1000f;
 
     [Tooltip("Штраф за каждый шаг (стимулирует быстрое выполнение задачи)")]
     public float stepPenalty = -0.0002f;
@@ -72,8 +72,25 @@ public class RobotBrain : Agent
     [Tooltip("Множитель штрафа за ультразвуковой датчик (применяется к wallPenalty)")]
     public float wallUltrasonicMultiplier = 0.5f;
 
-    [Tooltip("Множитель штрафа за боковые ИК-датчики (применяется к wallPenalty)")]
-    public float wallIRMultiplier = 1f;
+    [Tooltip("Штраф за неудачную попытку захвата (клешня закрыта или мяч вне зоны)")]
+    public float failedGrabPenalty = -0.1f;
+
+    // ==================== РАНДОМИЗАЦИЯ СТАРТОВЫХ ПОЗИЦИЙ ====================
+    [Header("Spawn Randomization")]
+    [Tooltip("Половина размера спавна по осям X и Z (прямоугольная область)")]
+    public Vector2 spawnHalfExtents = new Vector2(15f, 15f);
+
+    [Tooltip("Включает случайную позицию робота при старте каждого эпизода")]
+    public bool randomizeSpawn = true;
+
+    [Tooltip("Включает случайную позицию мяча при старте каждого эпизода")]
+    public bool randomizeBall = true;
+
+    [Tooltip("Минимальное расстояние между роботом и мячом при рандомизации (чтобы не спавниться друг на друге)")]
+    public float minSpawnDistance = 2f;
+
+    [Tooltip("Флаг, указывающий, что сейчас идёт обучение (включайте в инспекторе для тренировки)")]
+    public bool isTraining = true;
 
     // ==================== ПРИВАТНЫЕ ПОЛЯ ====================
     private Rigidbody rb;
@@ -103,9 +120,6 @@ public class RobotBrain : Agent
 
     // ==================== МЕТОДЫ ЖИЗНЕННОГО ЦИКЛА ====================
 
-    /// <summary>
-    /// Вызывается при пробуждении объекта. Получает ссылки на компоненты.
-    /// </summary>
     protected override void Awake()
     {
         base.Awake();
@@ -114,9 +128,6 @@ public class RobotBrain : Agent
         if (sensors == null) sensors = GetComponent<VirtualSensors>();
     }
 
-    /// <summary>
-    /// Инициализация агента: запоминает начальные позиции, находит мяч, инициализирует статистику.
-    /// </summary>
     public override void Initialize()
     {
         startPos = rb.position;
@@ -144,28 +155,59 @@ public class RobotBrain : Agent
     }
 
     /// <summary>
-    /// Вызывается в начале каждого нового эпизода. Сбрасывает состояние робота, мяча и статистику.
+    /// Генерирует случайную позицию в пределах арены на заданной высоте Y.
     /// </summary>
+    private Vector3 GetRandomPosition(float y)
+    {
+        float x = Random.Range(-spawnHalfExtents.x, spawnHalfExtents.x);
+        float z = Random.Range(-spawnHalfExtents.y, spawnHalfExtents.y);
+        return new Vector3(x, y, z);
+    }
+
     public override void OnEpisodeBegin()
     {
-        // Статистика уже отправлена перед EndEpisode, здесь только сбрасываем данные
+        // ----- Рандомизация стартовых позиций (если включено) -----
+        if (randomizeSpawn)
+        {
+            startPos = GetRandomPosition(startPos.y);
+        }
+
+        if (randomizeBall && ball != null)
+        {
+            Vector3 newBallPos;
+            int attempts = 0;
+            do
+            {
+                newBallPos = GetRandomPosition(ballStartPos.y);
+                attempts++;
+            } while (Vector3.Distance(newBallPos, startPos) < minSpawnDistance && attempts < 50);
+            ballStartPos = newBallPos;
+        }
+
+        // Сброс статистики
         rewardSumDict.Clear();
         rewardCountDict.Clear();
         episodeStepCounter = 0;
         statsSent = false;
 
+        // Открываем клешню
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
         if (gripper != null)
             gripper.Release();
 
+        // Останавливаем движение
         trackController?.Stop();
+
+        // Устанавливаем робота в начальную позицию
         rb.position = startPos;
         rb.rotation = startRot;
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
+        // Сбрасываем мяч (используется обновлённый ballStartPos)
         ResetBall();
 
+        // Сброс внутренних флагов
         hasBall = false;
         targetVisible = false;
         stepsSinceLastDetection = 0f;
@@ -180,9 +222,6 @@ public class RobotBrain : Agent
             : 0f;
     }
 
-    /// <summary>
-    /// Сбрасывает мяч в начальное положение и отключает физику.
-    /// </summary>
     private void ResetBall()
     {
         if (ball == null)
@@ -204,16 +243,10 @@ public class RobotBrain : Agent
 
     // ==================== СБОР НАБЛЮДЕНИЙ ====================
 
-    /// <summary>
-    /// Заполняет вектор наблюдений данными с датчиков, камеры, позиции и состояния.
-    /// </summary>
     public override void CollectObservations(VectorSensor sensor)
     {
-        // Ультразвук и ИК-датчики
-        sensor.AddObservation(sensors.GetUltrasonicNormalized());
-        sensor.AddObservation(sensors.GetLeftIR());
-        sensor.AddObservation(sensors.GetRightIR());
-        sensor.AddObservation(sensors.GetGripperIR());
+        // Ультразвук (сырое расстояние, без нормализации)
+        sensor.AddObservation(sensors.GetUltrasonicDistance());
 
         // Информация о цели с YOLO-камеры
         var targetInfo = yoloCamera != null
@@ -231,28 +264,17 @@ public class RobotBrain : Agent
         sensor.AddObservation(targetInfo.visible ? targetInfo.angle : lastKnownAngle);
         sensor.AddObservation(targetInfo.visible ? targetInfo.distance : lastKnownDistance);
         sensor.AddObservation(targetInfo.visible ? 1f : 0f);
-        sensor.AddObservation(hasBall ? 1f : 0f);
 
-        // Относительное положение относительно старта (нормировано)
-        Vector3 deltaPos = rb.position - startPos;
-        float arenaX = Mathf.Max(arenaHalfExtents.x, 0.01f);
-        float arenaZ = Mathf.Max(arenaHalfExtents.y, 0.01f);
-        sensor.AddObservation(Mathf.Clamp(deltaPos.x / arenaX, -1f, 1f));
-        sensor.AddObservation(Mathf.Clamp(deltaPos.z / arenaZ, -1f, 1f));
+        // Состояние клешни (открыта/закрыта)
+        GripperController gripper = gripperTransform?.GetComponent<GripperController>();
+        sensor.AddObservation(gripper != null && gripper.IsOpen ? 1f : 0f);
 
-        // Текущий курс (угол поворота) и скорость
-        float signedHeading = Mathf.DeltaAngle(0f, rb.rotation.eulerAngles.y) / 180f;
-        sensor.AddObservation(signedHeading);
-        sensor.AddObservation(Mathf.Clamp01(rb.linearVelocity.magnitude / 2f));
+        // Доля шагов без обнаружения цели
         sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / noDetectionSteps));
     }
 
     // ==================== ПРИНЯТИЕ РЕШЕНИЙ ====================
 
-    /// <summary>
-    /// Основной метод, вызываемый каждый шаг симуляции. Принимает действия (газ, руль, команда захвата),
-    /// вычисляет награды и проверяет условия завершения эпизода.
-    /// </summary>
     public override void OnActionReceived(ActionBuffers actions)
     {
         episodeStepCounter++;
@@ -275,10 +297,10 @@ public class RobotBrain : Agent
 
         // ---------- НАГРАДЫ И ШТРАФЫ (каждый шаг) ----------
 
-        // 1. Штраф за каждый шаг – стимулирует быстрое выполнение задачи
+        // 1. Штраф за каждый шаг
         AddRewardWithStats("StepPenalty", stepPenalty);
 
-        // 2. Штраф за резкие изменения управления – поощряет плавность
+        // 2. Штраф за резкие изменения управления
         float gasDelta = Mathf.Abs(gas - prevGas);
         float steerDelta = Mathf.Abs(steer - prevSteer);
         float smoothnessPenalty = -smoothnessPenaltyScale * (gasDelta + steerDelta);
@@ -287,7 +309,6 @@ public class RobotBrain : Agent
         prevSteer = steer;
 
         // 3. Награда за уменьшение угла до мяча (если цель видна)
-        //    Поощряет поворачиваться прямо на мяч.
         if (targetVisible)
         {
             float currentAbsAngle = Mathf.Abs(lastKnownAngle);
@@ -314,12 +335,9 @@ public class RobotBrain : Agent
                 AddRewardWithStats("GrabZoneReward", grabAttemptReward);
                 grabZoneRewardGranted = true;
             }
-
-            if (gripCommand == 1) gripper.Grab();
-            else if (gripCommand == 2) gripper.Release();
         }
 
-        // 5. Награда за приближение к мячу (разность расстояний * масштаб)
+        // 5. Награда за приближение к мячу
         if (ball != null)
         {
             float currentDistance = Vector3.Distance(holdPoint.position, ball.position);
@@ -328,11 +346,41 @@ public class RobotBrain : Agent
             lastDistanceToBall = currentDistance;
         }
 
-        // 6. Штрафы за близость к стенам (по разным датчикам)
-        if (sensors.GetUltrasonicNormalized() < 0.01f)
+        // 6. Штрафы за близость к стенам (ультразвук)
+        if (sensors.GetUltrasonicDistance() < 0.5f)
             AddRewardWithStats("WallUltrasonic", wallPenalty * wallUltrasonicMultiplier);
-        if (sensors.GetLeftIR() > 0.5f || sensors.GetRightIR() > 0.5f)
-            AddRewardWithStats("WallIR", wallPenalty * wallIRMultiplier);
+
+        // ---------- ОБРАБОТКА КОМАНД КЛЕШНИ ----------
+
+        if (gripper != null)
+        {
+            if (gripCommand == 1) // Захват
+            {
+                if (gripper.IsGrabbing)
+                {
+                    // Уже держит мяч – ничего не делаем
+                }
+                else if (gripper.IsOpen)
+                {
+                    bool success = gripper.Grab();
+                    if (!success)
+                    {
+                        AddRewardWithStats("FailedGrab", failedGrabPenalty);
+                    }
+                }
+                else // Клешня закрыта (и не держит мяч)
+                {
+                    AddRewardWithStats("FailedGrab", failedGrabPenalty);
+                }
+            }
+            else if (gripCommand == 2) // Отпускание
+            {
+                if (!gripper.IsOpen)
+                {
+                    gripper.Release();
+                }
+            }
+        }
 
         // ---------- ПРОВЕРКИ ЗАВЕРШЕНИЯ ЭПИЗОДА ----------
 
@@ -346,7 +394,7 @@ public class RobotBrain : Agent
             return;
         }
 
-        // 8. Выход за границы арены или падение – штраф и завершение
+        // 8. Выход за границы арены или падение
         Vector3 displacement = rb.position - startPos;
         bool outsideArena = Mathf.Abs(displacement.x) > arenaHalfExtents.x
             || Mathf.Abs(displacement.z) > arenaHalfExtents.y
@@ -360,7 +408,7 @@ public class RobotBrain : Agent
             return;
         }
 
-        // 9. Долгая потеря цели – штраф и прерывание эпизода
+        // 9. Долгая потеря цели – штраф и прерывание
         bool isInGrabZone = gripper != null && ball != null && holdPoint != null && 
                             Vector3.Distance(holdPoint.position, ball.position) < grabZoneRadius;
         if (!isInGrabZone && stepsSinceLastDetection > noDetectionSteps)
@@ -371,10 +419,8 @@ public class RobotBrain : Agent
         }
     }
 
-    /// <summary>
-    /// Эвристический режим (ручное управление) для тестирования.
-    /// Клавиши: W/S – газ, A/D – руль, Пробел – захват, R – отпускание.
-    /// </summary>
+    // ==================== ЭВРИСТИЧЕСКИЙ РЕЖИМ ====================
+
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var keyboard = Keyboard.current;
@@ -404,11 +450,6 @@ public class RobotBrain : Agent
 
     // ==================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ СТАТИСТИКИ ====================
 
-    /// <summary>
-    /// Добавляет награду и одновременно накапливает статистику по её типу.
-    /// </summary>
-    /// <param name="type">Уникальное имя типа награды (для логирования)</param>
-    /// <param name="reward">Величина награды (может быть отрицательной)</param>
     private void AddRewardWithStats(string type, float reward)
     {
         AddReward(reward);
@@ -421,10 +462,6 @@ public class RobotBrain : Agent
         rewardCountDict[type] += 1;
     }
 
-    /// <summary>
-    /// Отправляет собранную за эпизод статистику в TensorBoard через StatsRecorder.
-    /// Вызывается перед завершением эпизода.
-    /// </summary>
     private void SendStatsToTensorBoard()
     {
         if (statsSent) return;
@@ -433,11 +470,9 @@ public class RobotBrain : Agent
         var statsRecorder = Academy.Instance.StatsRecorder;
         if (statsRecorder == null) return;
 
-        // Общая награда эпизода и его длина
         statsRecorder.Add("Rewards/TotalEpisodeReward", GetCumulativeReward());
         statsRecorder.Add("Rewards/EpisodeLength", episodeStepCounter);
 
-        // По каждому типу награды: сумма, количество срабатываний, среднее значение
         foreach (var kvp in rewardSumDict)
         {
             string type = kvp.Key;

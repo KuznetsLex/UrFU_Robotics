@@ -16,6 +16,7 @@ public class GripperController : MonoBehaviour
     // Приватные переменные
     private GameObject grabbedBall;        // ссылка на захваченный мяч
     private bool isGrabbing = false;       // флаг, что мяч уже захвачен
+    private bool isOpen = true;            // флаг состояния клешни: true – открыта, false – закрыта
 
     // Ссылка на мяч, который находится в триггере (если используем триггер)
     private GameObject ballInTrigger;
@@ -34,82 +35,82 @@ public class GripperController : MonoBehaviour
     // ========== МЕТОДЫ ДЛЯ ВЫЗОВА ИЗВНЕ (например, из скрипта управления) ==========
 
     /// <summary>
-    /// Вызовите этот метод, чтобы захватить мяч (если он находится в зоне триггера)
+    /// Вызовите этот метод, чтобы захватить мяч (если он находится в зоне триггера и клешня открыта).
+    /// Если мяча нет – клешня просто закрывается (без захвата).
     /// </summary>
-    public void Grab()
+    /// <returns>true – мяч захвачен, false – мяч не найден (клешня закрыта без мяча)</returns>
+    public bool Grab()
     {
-        if (isGrabbing) return; // уже держим мяч
+        if (isGrabbing) return false; // уже держим мяч – повторный захват невозможен
+        if (!isOpen) return false;    // клешня закрыта – захват запрещён
 
-        // Если есть мяч в триггере – захватываем его
+        // Пытаемся найти мяч в триггере или через физику
+        GameObject ballToGrab = null;
         if (ballInTrigger != null)
         {
-            PerformGrab(ballInTrigger);
+            ballToGrab = ballInTrigger;
         }
         else
         {
-            // Альтернативно: можно проверить наличие мяча через физику (если триггер не сработал)
             Collider[] hitColliders = Physics.OverlapSphere(holdPoint.position, grabRadius);
             foreach (var col in hitColliders)
             {
                 if (col.CompareTag(targetTag))
                 {
-                    PerformGrab(col.gameObject);
+                    ballToGrab = col.gameObject;
                     break;
                 }
             }
         }
-    }
 
-    public bool IsTargetInGrabZone()
-    {
-        if (ballInTrigger != null)
-            return true;
-
-        if (holdPoint == null)
-            return false;
-
-        Collider[] hitColliders = Physics.OverlapSphere(holdPoint.position, grabRadius);
-        foreach (var col in hitColliders)
+        if (ballToGrab != null)
         {
-            if (col.CompareTag(targetTag))
-                return true;
+            // Мяч найден – захватываем его и закрываем клешню
+            PerformGrab(ballToGrab);
+            return true;
         }
-
-        return false;
+        else
+        {
+            // Мяч не найден – просто закрываем клешню без захвата
+            CloseWithoutGrab();
+            return false;
+        }
     }
 
     /// <summary>
-    /// Вызовите этот метод, чтобы отпустить захваченный мяч
+    /// Вызовите этот метод, чтобы отпустить захваченный мяч (если клешня закрыта).
+    /// Если клешня уже открыта – ничего не делает.
     /// </summary>
     public void Release()
     {
-        if (!isGrabbing || grabbedBall == null) return;
+        if (isOpen) return; // уже открыта – ничего не делаем
 
-        // Возвращаем мячу физику
-        Rigidbody rb = grabbedBall.GetComponent<Rigidbody>();
-        if (rb != null)
+        // Если держим мяч – освобождаем его
+        if (isGrabbing && grabbedBall != null)
         {
-            rb.isKinematic = false;          // включаем физику
+            // Возвращаем мячу физику
+            Rigidbody rb = grabbedBall.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.isKinematic = false;
+            }
+
+            // Включаем коллайдер мяча
+            Collider col = grabbedBall.GetComponent<Collider>();
+            if (col != null)
+            {
+                col.enabled = true;
+            }
+
+            // Открепляем от родителя
+            grabbedBall.transform.SetParent(null);
+            grabbedBall = null;
+            isGrabbing = false;
         }
 
-        // Включаем коллайдер мяча
-        Collider col = grabbedBall.GetComponent<Collider>();
-        if (col != null)
-        {
-            col.enabled = true;
-        }
-
-        // Открепляем от родителя (освобождаем)
-        grabbedBall.transform.SetParent(null);
-
-        // Опционально: можно добавить небольшую скорость, чтобы мяч вылетел
-        // Например, передать скорость робота вперёд:
-        // Rigidbody robotRb = GetComponentInParent<Rigidbody>();
-        // if (robotRb != null) rb.velocity = robotRb.velocity * 0.5f;
-
-        // Сбрасываем флаги
-        isGrabbing = false;
-        grabbedBall = null;
+        // Открываем клешню
+        isOpen = true;
+        Debug.Log("Клешня открыта");
     }
 
     // ========== ВНУТРЕННЯЯ ЛОГИКА ==========
@@ -120,37 +121,44 @@ public class GripperController : MonoBehaviour
         Rigidbody rb = ball.GetComponent<Rigidbody>();
         if (rb != null)
         {
-            rb.isKinematic = true;           // мяч перестаёт реагировать на силы
+            rb.isKinematic = true;
         }
 
-        // Отключаем коллайдер, чтобы мяч не сталкивался с другими объектами
+        // Отключаем коллайдер
         Collider col = ball.GetComponent<Collider>();
         if (col != null)
         {
             col.enabled = false;
         }
 
-        // Делаем мяч дочерним объектом HoldPoint (он будет двигаться вместе с клешней)
+        // Делаем мяч дочерним объектом HoldPoint
         ball.transform.SetParent(holdPoint);
-        ball.transform.localPosition = Vector3.zero;   // центрируем в точке удержания
+        ball.transform.localPosition = Vector3.zero;
         ball.transform.localRotation = Quaternion.identity;
 
-        // Сохраняем ссылку
+        // Сохраняем ссылку и обновляем состояние
         grabbedBall = ball;
         isGrabbing = true;
+        isOpen = false; // клешня закрыта
 
-        // Очищаем триггерную ссылку, чтобы не захватить тот же мяч повторно
+        // Очищаем триггерную ссылку
         ballInTrigger = null;
 
         Debug.Log("Мяч захвачен!");
     }
 
+    private void CloseWithoutGrab()
+    {
+        isOpen = false;
+        // isGrabbing остаётся false
+        Debug.Log("Клешня закрыта без мяча");
+    }
+
     // ========== ОБРАБОТКА ТРИГГЕРА ==========
 
-    // Когда мяч входит в зону триггера
     private void OnTriggerEnter(Collider other)
     {
-        if (isGrabbing) return; // если уже держим мяч, игнорируем новые
+        if (isGrabbing) return;
         if (other.CompareTag(targetTag))
         {
             ballInTrigger = other.gameObject;
@@ -158,12 +166,10 @@ public class GripperController : MonoBehaviour
         }
     }
 
-    // Когда мяч выходит из зоны триггера
     private void OnTriggerExit(Collider other)
     {
         if (other.CompareTag(targetTag))
         {
-            // Если этот мяч не захвачен, очищаем ссылку
             if (ballInTrigger == other.gameObject && !isGrabbing)
             {
                 ballInTrigger = null;
@@ -172,7 +178,7 @@ public class GripperController : MonoBehaviour
         }
     }
 
-    // ========== ОТЛАДКА (для визуализации радиуса) ==========
+    // ========== ОТЛАДКА ==========
     private void OnDrawGizmosSelected()
     {
         if (holdPoint != null)
@@ -182,7 +188,6 @@ public class GripperController : MonoBehaviour
         }
     }
 
-    // testing
     void Update()
     {
         var keyboard = Keyboard.current;
@@ -192,5 +197,7 @@ public class GripperController : MonoBehaviour
         if (keyboard.rKey.wasPressedThisFrame) Release();
     }
 
+    // ========== СВОЙСТВА ДЛЯ ВНЕШНЕГО ДОСТУПА ==========
     public bool IsGrabbing => isGrabbing;
+    public bool IsOpen => isOpen;
 }
