@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class SimulatedYoloCamera : MonoBehaviour
@@ -10,6 +11,14 @@ public class SimulatedYoloCamera : MonoBehaviour
     [Header("References")]
     public Transform targetBall;
     public LayerMask obstacleLayer;
+
+    // Переиспользуемый буфер для RaycastNonAlloc — на RaycastAll здесь раньше
+    // аллоцировался новый массив каждый вызов (каждое решение агента, на каждой
+    // арене), это заметно нагружало GC при обучении с несколькими аренами.
+    private const int MaxLineOfSightHits = 24;
+    private readonly RaycastHit[] losHitsBuffer = new RaycastHit[MaxLineOfSightHits];
+    private static readonly Comparison<RaycastHit> ByDistance =
+        (left, right) => left.distance.CompareTo(right.distance);
 
     public (float angle, float distance, bool visible) GetTargetInfo()
     {
@@ -39,16 +48,25 @@ public class SimulatedYoloCamera : MonoBehaviour
 
     private bool HasLineOfSight(Vector3 direction, float distance)
     {
-        RaycastHit[] hits = Physics.RaycastAll(
+        int hitCount = Physics.RaycastNonAlloc(
             transform.position,
             direction,
+            losHitsBuffer,
             distance,
             obstacleLayer,
             QueryTriggerInteraction.Ignore);
 
-        Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
-        foreach (RaycastHit hit in hits)
+        // Буфер переполнен (крайне маловероятно) — трактуем как "не видно",
+        // это безопаснее, чем случайно решить, что мяч виден, пропустив препятствие.
+        if (hitCount >= losHitsBuffer.Length)
+            return false;
+
+        if (hitCount > 1)
+            Array.Sort(losHitsBuffer, 0, hitCount, Comparer<RaycastHit>.Create(ByDistance));
+
+        for (int i = 0; i < hitCount; i++)
         {
+            RaycastHit hit = losHitsBuffer[i];
             if (hit.transform.root == transform.root)
                 continue;
             if (hit.transform == targetBall || hit.transform.IsChildOf(targetBall))

@@ -34,10 +34,22 @@ namespace Team11.Ros
         private float lastSensorMessageTime = -1f;
         private VirtualSensors simulationSensors;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        // AfterSceneLoad (не BeforeSceneLoad) — чтобы к моменту проверки
+        // RobotBrain.isTraining объекты сцены (и склонированные ArenaSpawner'ом
+        // роботы) уже существовали и были доступны через FindAnyObjectByType.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
         {
             if (FindAnyObjectByType<RobotRosTeleop>() != null)
+            {
+                return;
+            }
+
+            // Во время обучения (сцена с RobotBrain.isTraining = true) не подключаемся
+            // к реальному роботу вообще: иначе WASD, нажатый случайно во время
+            // наблюдения за тренировкой, уйдёт как команда на физического робота.
+            RobotBrain brain = FindAnyObjectByType<RobotBrain>();
+            if (brain != null && brain.isTraining)
             {
                 return;
             }
@@ -73,7 +85,10 @@ namespace Team11.Ros
 
             if (keyboard != null)
             {
-                if (keyboard.spaceKey.wasPressedThisFrame)
+                // Escape, а не Space — Space занят захватом мяча в RobotBrain.Heuristic(),
+                // при общей клавише ручной тест захвата в симуляции попутно
+                // аварийно останавливал бы реального робота.
+                if (keyboard.escapeKey.wasPressedThisFrame)
                 {
                     emergencyStop = true;
                     PublishStop();
@@ -214,7 +229,7 @@ namespace Team11.Ros
             GUI.Label(new Rect(panel.x + 12, panel.y + 24, width - 24, 20),
                 $"{RobotIpAddress}:{RobotTcpPort}  |  topic: {CommandTopic}");
             GUI.Label(new Rect(panel.x + 12, panel.y + 44, width - 24, 20),
-                "WASD/arrows: drive   Space: E-STOP   Enter: reset E-STOP");
+                "WASD/arrows: drive   Escape: E-STOP   Enter: reset E-STOP");
 
             string state = emergencyStop ? "E-STOP ACTIVE" : "ready";
             GUI.Label(new Rect(panel.x + 12, panel.y + 64, width - 24, 20), $"State: {state}");

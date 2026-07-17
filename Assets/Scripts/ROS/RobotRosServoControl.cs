@@ -58,6 +58,14 @@ namespace Team11.Ros
                 return;
             }
 
+            // Не подключаемся к реальному роботу во время обучения — см. тот же
+            // комментарий в RobotRosTeleop.Install().
+            RobotBrain brain = FindAnyObjectByType<RobotBrain>();
+            if (brain != null && brain.isTraining)
+            {
+                return;
+            }
+
             ROSConnection.GetOrCreateInstance().gameObject.AddComponent<RobotRosServoControl>();
         }
 
