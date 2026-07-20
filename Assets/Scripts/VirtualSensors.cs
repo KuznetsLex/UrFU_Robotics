@@ -15,10 +15,13 @@ public class VirtualSensors : MonoBehaviour
     public float ultrasonicAngle = 45f;
     public LayerMask obstacleLayer;
 
+    private RobotBrain robotBrain;
+
     private void Awake()
     {
         if (obstacleLayer == 0)
             obstacleLayer = LayerMask.GetMask("Default");
+        robotBrain = GetComponent<RobotBrain>();
     }
 
     // === Методы для получения показаний датчиков ===
@@ -137,9 +140,15 @@ public class VirtualSensors : MonoBehaviour
     }
 
     // === Визуализация во время игры (для отладки) ===
+    // Пропускается при Is Training = true на RobotBrain — эти лучи только для
+    // визуальной отладки, а лишние Physics.Raycast и Debug.DrawRay каждый кадр
+    // на десятках арен заметно грузят обучение.
 
     private void Update()
     {
+        if (robotBrain != null && robotBrain.isTraining)
+            return;
+
         DrawDebugRay(leftIRPoint, irDistance);
         DrawDebugRay(rightIRPoint, irDistance);
         DrawDebugRay(centerIRPoint, irDistance);

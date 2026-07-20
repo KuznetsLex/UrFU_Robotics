@@ -45,6 +45,14 @@ namespace Team11.Ros
                 return;
             }
 
+            // Не опрашиваем HTTP-камеру реального робота во время обучения — см. тот
+            // же комментарий в RobotRosTeleop.Install().
+            RobotBrain brain = FindAnyObjectByType<RobotBrain>();
+            if (brain != null && brain.isTraining)
+            {
+                return;
+            }
+
             ROSConnection.GetOrCreateInstance().gameObject.AddComponent<RobotCameraView>();
         }
 

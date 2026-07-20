@@ -175,6 +175,14 @@ public class RobotBrain : Agent
         set => UseRealRobotIo = value;
     }
 
+    [Tooltip("Опционально: если назначен, периодически генерирует новые стены/путь/препятствия и переставляет робота и мяч, вместо возврата на фиксированную стартовую позицию")]
+    public EnvironmentManager environmentManager;
+
+    [Tooltip("Через сколько эпизодов перегенерировать арену (новый путь/препятствия). 1 = каждый эпизод. Остальные эпизоды между перегенерациями просто возвращают робота и мяч на те же позиции, что и в последней сгенерированной конфигурации")]
+    public int regenerateEveryEpisodes = 10;
+
+    private int episodesUntilRegenerate = 0;
+
     // ==================== ОСНОВНЫЕ НАГРАДЫ И ШТРАФЫ ====================
     [Header("Основные награды и штрафы")]
     [Tooltip("Штраф при столкновении со стеной (умножается на множители для разных датчиков)")]
@@ -386,26 +394,34 @@ public class RobotBrain : Agent
                 yoloCamera?.ResetDomainParameters();
         }
 
-        startPos = initialStartPos;
-        if (ball != null)
-            ballStartPos = initialBallStartPos;
-
-        // ----- Рандомизация стартовых позиций (если включено) -----
-        if (isTraining && randomizeSpawn)
+        // ----- Рандомизация стартовых позиций (если включено, нет EnvironmentManager
+        // и идёт обучение) -----
+        // Когда назначен EnvironmentManager, он сам расставляет робота и мяч (с учётом
+        // стен/пути/препятствий) ниже, используя последний сгенерированный startPos/
+        // ballStartPos между перегенерациями — простой сброс к initialStartPos и
+        // рандомизация по прямоугольнику здесь их бы сразу перезаписали.
+        if (environmentManager == null)
         {
-            startPos = GetRandomPosition(startPos.y);
-        }
+            startPos = initialStartPos;
+            if (ball != null)
+                ballStartPos = initialBallStartPos;
 
-        if (isTraining && randomizeBall && ball != null)
-        {
-            Vector3 newBallPos;
-            int attempts = 0;
-            do
+            if (isTraining && randomizeSpawn)
             {
-                newBallPos = GetRandomPosition(ballStartPos.y);
-                attempts++;
-            } while (Vector3.Distance(newBallPos, startPos) < minSpawnDistance && attempts < 50);
-            ballStartPos = newBallPos;
+                startPos = GetRandomPosition(startPos.y);
+            }
+
+            if (isTraining && randomizeBall && ball != null)
+            {
+                Vector3 newBallPos;
+                int attempts = 0;
+                do
+                {
+                    newBallPos = GetRandomPosition(ballStartPos.y);
+                    attempts++;
+                } while (Vector3.Distance(newBallPos, startPos) < minSpawnDistance && attempts < 50);
+                ballStartPos = newBallPos;
+            }
         }
 
         // Сброс статистики
@@ -424,16 +440,56 @@ public class RobotBrain : Agent
         if (useRealRobotIo)
             GetSelectedCommandSink()?.Stop();
 
-        // Устанавливаем робота в начальную позицию
-        rb.position = startPos;
-        rb.rotation = startRot;
+        // Сначала освобождаем мяч, если он был захвачен клешнёй в прошлом эпизоде —
+        // иначе генератор арены (или простой рестарт позиции) переставит мяч,
+        // всё ещё "прилипший" к руке робота.
+        ResetBall();
+
+        if (environmentManager != null)
+        {
+            // Перегенерируем конфигурацию (путь/препятствия) не каждый эпизод, а раз
+            // в regenerateEveryEpisodes эпизодов — иначе арена меняется каждые
+            // несколько секунд, и агент не успевает потренироваться на одной раскладке.
+            if (episodesUntilRegenerate <= 0)
+            {
+                // Генератор сам строит новые стены, путь и препятствия и переставляет
+                // робота и мяч на новые случайные позиции внутри арены (высота
+                // сохраняется — см. EnvironmentManager.RandomizeStartAndTarget()).
+                environmentManager.GenerateArena();
+
+                // Границы для наблюдений/выхода-за-пределы должны совпадать с реальным
+                // размером сгенерированной арены, а не с дефолтным значением поля.
+                arenaHalfExtents = environmentManager.baseArenaSize * environmentManager.globalScale * 0.5f;
+                startPos = rb.position;
+                startRot = rb.rotation;
+                if (ball != null)
+                {
+                    ballStartPos = ball.position;
+                    ballStartRot = ball.rotation;
+                    ballStartParent = ball.parent;
+                }
+                episodesUntilRegenerate = Mathf.Max(1, regenerateEveryEpisodes);
+            }
+            else
+            {
+                // Та же конфигурация — просто возвращаем робота на позицию,
+                // зафиксированную при последней генерации (мяч уже вернул ResetBall()).
+                rb.position = startPos;
+                rb.rotation = startRot;
+            }
+            episodesUntilRegenerate--;
+        }
+        else
+        {
+            // Без EnvironmentManager — startPos/ballStartPos уже посчитаны выше
+            // через randomizeSpawn/randomizeBall (или остались от прошлого эпизода).
+            rb.position = startPos;
+            rb.rotation = startRot;
+        }
+
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        // Сбрасываем мяч (используется обновлённый ballStartPos)
-        ResetBall();
-
-        // Сброс внутренних флагов
         hasBall = false;
         targetVisible = false;
         stepsSinceLastDetection = 0f;
