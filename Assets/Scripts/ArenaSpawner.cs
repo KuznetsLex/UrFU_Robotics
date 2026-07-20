@@ -59,8 +59,19 @@ public class ArenaSpawner : MonoBehaviour
             if (member != null)
                 member.SetParent(arena0Root.transform, true); // worldPositionStays: исходная арена остаётся на месте
         }
-        WireArena(arena0Root);
 
+        // Сначала клонируем ВСЕ арены из "чистого" arena0Root, и только потом
+        // вызываем WireArena() для каждой (включая саму arena0Root). Раньше
+        // WireArena(arena0Root) вызывался ДО цикла клонирования — из-за этого
+        // (а) CreateFloor() успевал создать пол для арены 0 ДО клонирования,
+        // и он склонировался вместе со всем остальным, а потом WireArena(clone)
+        // создавал для той же копии ещё один — на каждой арене 1..N-1 оказывалось
+        // по два пола; и (б) brain.ball у арены 0 был выставлен до клонирования,
+        // из-за чего у клонов эта ссылка на мяч могла запутаться (не гарантированно
+        // корректно переносится Instantiate() для поля, присвоенного рантайм-кодом
+        // непосредственно перед клонированием). Клонирование из ещё не тронутого
+        // WireArena() шаблона убирает обе проблемы разом.
+        var arenaRoots = new List<GameObject> { arena0Root };
         for (int i = 1; i < arenaCount; i++)
         {
             int row = i / arenasPerRow;
@@ -69,8 +80,11 @@ public class ArenaSpawner : MonoBehaviour
 
             GameObject clone = Instantiate(arena0Root, offset, arena0Root.transform.rotation);
             clone.name = $"Arena_{i}";
-            WireArena(clone);
+            arenaRoots.Add(clone);
         }
+
+        foreach (GameObject arenaRoot in arenaRoots)
+            WireArena(arenaRoot);
     }
 
     // Явно связывает робота, мяч и генератор арены внутри ОДНОЙ конкретной копии.

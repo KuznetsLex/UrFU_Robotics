@@ -16,6 +16,7 @@ public class GripperController : MonoBehaviour
     private GameObject grabbedBall;        // ссылка на захваченный мяч
     private bool isGrabbing = false;       // флаг, что мяч уже захвачен
     private bool isOpen = true;            // флаг состояния клешни: true – открыта, false – закрыта
+    private Transform grabbedBallOriginalParent; // родитель мяча до захвата (чтобы вернуть при отпускании)
 
     // Ссылка на мяч, который находится в триггере (если используем триггер)
     private GameObject ballInTrigger;
@@ -101,8 +102,11 @@ public class GripperController : MonoBehaviour
                 col.enabled = true;
             }
 
-            // Открепляем от родителя
-            grabbedBall.transform.SetParent(null);
+            // Возвращаем родителя, который был до захвата (арену мяча), а не корень
+            // сцены — иначе при отпускании посреди эпизода (например, агент решил
+            // перехватить заново) мяч навсегда "выпадал" из иерархии своей арены,
+            // хотя физически оставался на месте (SetParent сохраняет мировые координаты).
+            grabbedBall.transform.SetParent(grabbedBallOriginalParent);
             grabbedBall = null;
             isGrabbing = false;
         }
@@ -129,6 +133,9 @@ public class GripperController : MonoBehaviour
         {
             col.enabled = false;
         }
+
+        // Запоминаем родителя мяча до захвата, чтобы вернуть его туда при отпускании
+        grabbedBallOriginalParent = ball.transform.parent;
 
         // Делаем мяч дочерним объектом HoldPoint
         ball.transform.SetParent(holdPoint);

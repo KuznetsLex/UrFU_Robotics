@@ -288,7 +288,6 @@ public class RobotBrain : Agent
     private Vector3 ballStartPos;
     private Vector3 initialBallStartPos;
     private Quaternion ballStartRot;
-    private Transform ballStartParent;
     private Rigidbody ballRb;
     private Collider ballCollider;
     private float lastDistanceToBall;
@@ -354,7 +353,6 @@ public class RobotBrain : Agent
             ballStartPos = ball.position;
             initialBallStartPos = ballStartPos;
             ballStartRot = ball.rotation;
-            ballStartParent = ball.parent;
             ballRb = ball.GetComponent<Rigidbody>();
             ballCollider = ball.GetComponent<Collider>();
             lastDistanceToBall = holdPoint != null
@@ -502,7 +500,6 @@ public class RobotBrain : Agent
                 {
                     ballStartPos = ball.position;
                     ballStartRot = ball.rotation;
-                    ballStartParent = ball.parent;
                 }
                 episodesUntilRegenerate = Mathf.Max(1, regenerateEveryEpisodes);
             }
@@ -550,7 +547,13 @@ public class RobotBrain : Agent
         if (ball == null)
             return;
 
-        ball.SetParent(ballStartParent);
+        // Родитель мяча = родитель робота (корень его собственной арены), а не
+        // отдельно закэшированное значение — тот кэш (ballStartParent) на практике
+        // оказывался равен Arena_0 у клонированных ArenaSpawner'ом арен, из-за
+        // чего каждый ResetBall() утаскивал мяч в чужую арену. transform.parent
+        // у робота никогда не перепривязывается после создания, так что он
+        // надёжен как источник истины.
+        ball.SetParent(transform.parent);
         ball.SetPositionAndRotation(ballStartPos, ballStartRot);
 
         if (ballRb != null)
