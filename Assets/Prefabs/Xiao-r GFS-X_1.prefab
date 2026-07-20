@@ -1180,6 +1180,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SimulatedYoloCamera
   maxVisibleDistance: 30
   horizontalFOV: 40
+  cameraAspectRatio: 1.3333334
+  randomizeHorizontalFOV: 1
+  horizontalFOVRange: {x: 35, y: 55}
+  verticalTiltRange: {x: 0, y: 10}
+  randomizeSensorEffects: 1
+  angleNoiseStdDevRange: {x: 0, y: 0.03}
+  detectionDropoutRange: {x: 0, y: 0.1}
+  latencyMeasurementsRange: {x: 0, y: 2}
+  angleNoiseStdDev: 0
+  detectionDropoutProbability: 0
+  latencyMeasurements: 0
   targetBall: {fileID: 0}
   obstacleLayer:
     serializedVersion: 2
@@ -2130,9 +2141,13 @@ MonoBehaviour:
   outOfBoundsPenalty: -0.5
   arenaHalfExtents: {x: 300, y: 300}
   fallDistance: 3
+  arenaEscapeMargin: 2
   noDetectionSteps: 100
   stepPenalty: -0.0002
   grabAttemptReward: 0.1
+  cameraRewardScale: 0.02
+  cameraAngleDeadZone: 0.05
+  cameraRewardClamp: 0.02
 --- !u!114 &1636716259720906956
 MonoBehaviour:
   m_ObjectHideFlags: 0

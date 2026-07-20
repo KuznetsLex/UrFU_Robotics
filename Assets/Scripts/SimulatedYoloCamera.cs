@@ -20,9 +20,33 @@ public class SimulatedYoloCamera : MonoBehaviour
     [Tooltip("Vertical camera tilt range in degrees, sampled with the FOV.")]
     public Vector2 verticalTiltRange = new Vector2(-5f, 5f);
 
+    [Header("Sensor randomization")]
+    [Tooltip("Randomize angle noise, detection dropout and measurement latency per training episode.")]
+    public bool randomizeSensorEffects = true;
+    [Tooltip("Range for normalized angle noise standard deviation.")]
+    public Vector2 angleNoiseStdDevRange = new Vector2(0f, 0.03f);
+    [Tooltip("Range for the probability of dropping an otherwise valid detection.")]
+    public Vector2 detectionDropoutRange = new Vector2(0f, 0.1f);
+    [Tooltip("Range for camera latency measured in agent camera observations.")]
+    public Vector2Int latencyMeasurementsRange = new Vector2Int(0, 2);
+
+    [Header("Current sensor effects")]
+    [SerializeField, Min(0f)] private float angleNoiseStdDev;
+    [SerializeField, Range(0f, 1f)] private float detectionDropoutProbability;
+    [SerializeField, Min(0)] private int latencyMeasurements;
+
     private bool baseParametersCaptured;
     private float baseHorizontalFOV;
     private Quaternion baseLocalRotation;
+    private ulong measurementVersion;
+    private readonly Queue<(float angle, float areaRatio, float aspectRatio, bool visible)>
+        delayedMeasurements = new Queue<(float, float, float, bool)>();
+
+    /// <summary>
+    /// Changes whenever this source produces a new camera measurement. RobotBrain
+    /// uses it to apply camera shaping only once per measurement.
+    /// </summary>
+    public virtual ulong MeasurementVersion => measurementVersion;
 
     [Header("References")]
     public Transform targetBall;
@@ -40,32 +64,56 @@ public class SimulatedYoloCamera : MonoBehaviour
     {
         CaptureBaseParameters();
 
-        if (!randomizeHorizontalFOV)
+        if (randomizeHorizontalFOV)
         {
-            ResetDomainParameters();
-            return;
+            float minimumFov = Mathf.Clamp(
+                Mathf.Min(horizontalFOVRange.x, horizontalFOVRange.y),
+                1f,
+                179f);
+            float maximumFov = Mathf.Clamp(
+                Mathf.Max(horizontalFOVRange.x, horizontalFOVRange.y),
+                minimumFov,
+                179f);
+            horizontalFOV = UnityEngine.Random.Range(minimumFov, maximumFov);
+
+            float minimumTilt = Mathf.Clamp(
+                Mathf.Min(verticalTiltRange.x, verticalTiltRange.y),
+                -89f,
+                89f);
+            float maximumTilt = Mathf.Clamp(
+                Mathf.Max(verticalTiltRange.x, verticalTiltRange.y),
+                minimumTilt,
+                89f);
+            float verticalTilt = UnityEngine.Random.Range(minimumTilt, maximumTilt);
+            transform.localRotation = baseLocalRotation * Quaternion.Euler(verticalTilt, 0f, 0f);
+        }
+        else
+        {
+            horizontalFOV = baseHorizontalFOV;
+            transform.localRotation = baseLocalRotation;
         }
 
-        float minimumFov = Mathf.Clamp(
-            Mathf.Min(horizontalFOVRange.x, horizontalFOVRange.y),
-            1f,
-            179f);
-        float maximumFov = Mathf.Clamp(
-            Mathf.Max(horizontalFOVRange.x, horizontalFOVRange.y),
-            minimumFov,
-            179f);
-        horizontalFOV = UnityEngine.Random.Range(minimumFov, maximumFov);
+        if (randomizeSensorEffects)
+        {
+            angleNoiseStdDev = SampleRange(angleNoiseStdDevRange, 0f, float.PositiveInfinity);
+            detectionDropoutProbability = SampleRange(detectionDropoutRange, 0f, 1f);
 
-        float minimumTilt = Mathf.Clamp(
-            Mathf.Min(verticalTiltRange.x, verticalTiltRange.y),
-            -89f,
-            89f);
-        float maximumTilt = Mathf.Clamp(
-            Mathf.Max(verticalTiltRange.x, verticalTiltRange.y),
-            minimumTilt,
-            89f);
-        float verticalTilt = UnityEngine.Random.Range(minimumTilt, maximumTilt);
-        transform.localRotation = baseLocalRotation * Quaternion.Euler(verticalTilt, 0f, 0f);
+            int minimumLatency = Mathf.Max(0, Mathf.Min(
+                latencyMeasurementsRange.x,
+                latencyMeasurementsRange.y));
+            int maximumLatency = Mathf.Max(minimumLatency, Mathf.Max(
+                latencyMeasurementsRange.x,
+                latencyMeasurementsRange.y));
+            latencyMeasurements = UnityEngine.Random.Range(minimumLatency, maximumLatency + 1);
+        }
+        else
+        {
+            angleNoiseStdDev = 0f;
+            detectionDropoutProbability = 0f;
+            latencyMeasurements = 0;
+        }
+
+        delayedMeasurements.Clear();
     }
 
     public virtual void ResetDomainParameters()
@@ -73,6 +121,10 @@ public class SimulatedYoloCamera : MonoBehaviour
         CaptureBaseParameters();
         horizontalFOV = baseHorizontalFOV;
         transform.localRotation = baseLocalRotation;
+        angleNoiseStdDev = 0f;
+        detectionDropoutProbability = 0f;
+        latencyMeasurements = 0;
+        delayedMeasurements.Clear();
     }
 
     private void CaptureBaseParameters()
@@ -89,6 +141,7 @@ public class SimulatedYoloCamera : MonoBehaviour
 
     public virtual (float angle, float areaRatio, float aspectRatio, bool visible) GetTargetInfo()
     {
+        measurementVersion++;
         ResolveSceneTarget();
 
         if (targetBall == null ||
@@ -96,7 +149,7 @@ public class SimulatedYoloCamera : MonoBehaviour
             horizontalFOV <= 0f ||
             cameraAspectRatio <= 0f)
         {
-            return (0f, 0f, 0f, false);
+            return ApplySensorEffects((0f, 0f, 0f, false));
         }
 
         Vector3 toTarget = targetBall.position - transform.position;
@@ -114,12 +167,53 @@ public class SimulatedYoloCamera : MonoBehaviour
 
         if (!hasLineOfSight || !TryGetTargetBounds(out Bounds bounds))
         {
-            return (0f, 0f, 0f, false);
+            return ApplySensorEffects((0f, 0f, 0f, false));
         }
 
-        return TryProjectBounds(bounds, out float angle, out float areaRatio, out float aspectRatio)
+        var rawMeasurement = TryProjectBounds(bounds, out float angle, out float areaRatio, out float aspectRatio)
             ? (angle, areaRatio, aspectRatio, true)
             : (0f, 0f, 0f, false);
+        return ApplySensorEffects(rawMeasurement);
+    }
+
+    private (float angle, float areaRatio, float aspectRatio, bool visible) ApplySensorEffects(
+        (float angle, float areaRatio, float aspectRatio, bool visible) measurement)
+    {
+        if (measurement.visible)
+        {
+            if (detectionDropoutProbability > 0f &&
+                UnityEngine.Random.value < detectionDropoutProbability)
+            {
+                measurement = (0f, 0f, 0f, false);
+            }
+            else if (angleNoiseStdDev > 0f)
+            {
+                measurement.angle = Mathf.Clamp(
+                    measurement.angle + SampleStandardNormal() * angleNoiseStdDev,
+                    -1f,
+                    1f);
+            }
+        }
+
+        delayedMeasurements.Enqueue(measurement);
+        if (delayedMeasurements.Count <= latencyMeasurements)
+            return (0f, 0f, 0f, false);
+
+        return delayedMeasurements.Dequeue();
+    }
+
+    private static float SampleRange(Vector2 range, float lowerBound, float upperBound)
+    {
+        float minimum = Mathf.Clamp(Mathf.Min(range.x, range.y), lowerBound, upperBound);
+        float maximum = Mathf.Clamp(Mathf.Max(range.x, range.y), minimum, upperBound);
+        return UnityEngine.Random.Range(minimum, maximum);
+    }
+
+    private static float SampleStandardNormal()
+    {
+        float uniformA = Mathf.Max(UnityEngine.Random.value, 0.000001f);
+        float uniformB = UnityEngine.Random.value;
+        return Mathf.Sqrt(-2f * Mathf.Log(uniformA)) * Mathf.Cos(2f * Mathf.PI * uniformB);
     }
 
     private void ResolveSceneTarget()

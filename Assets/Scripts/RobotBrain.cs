@@ -215,9 +215,13 @@ public class RobotBrain : Agent
     [Tooltip("Порог падения по оси Y (ниже которого эпизод завершается)")]
     public float fallDistance = 3f;
 
+    [Tooltip("Запас за физическими стенами для аварийного завершения при вылете из арены")]
+    [Min(0f)] public float arenaEscapeMargin = 2f;
+
     // ==================== ОГРАНИЧЕНИЯ ЭПИЗОДА ====================
     [Header("Ограничения эпизода")]
-    [Tooltip("Максимальное количество шагов без обнаружения цели, после которого эпизод прерывается")]
+    [Tooltip("Количество шагов без обнаружения, при котором соответствующее наблюдение достигает 1. Эпизод этим счётчиком не завершается.")]
+    [Min(1f)]
     public float noDetectionSteps = 1000f;
 
     [Tooltip("Штраф за каждый шаг (стимулирует быстрое выполнение задачи)")]
@@ -235,11 +239,15 @@ public class RobotBrain : Agent
     [Tooltip("Множитель штрафа за резкие изменения газа и руля")]
     public float smoothnessPenaltyScale = 0.002f;
 
-    [Tooltip("Множитель награды за уменьшение угла до мяча")]
-    public float angleRewardScale = 0.005f;
+    [FormerlySerializedAs("angleRewardScale")]
+    [Tooltip("Масштаб потенциальной награды за улучшение положения цели в кадре")]
+    [Min(0f)] public float cameraRewardScale = 0.02f;
 
-    [Tooltip("Штраф при превышении лимита шагов без детекции")]
-    public float noDetectionPenalty = -0.2f;
+    [Tooltip("Нормализованная мёртвая зона около центра кадра, в которой camera score равен 1")]
+    [Range(0f, 0.99f)] public float cameraAngleDeadZone = 0.05f;
+
+    [Tooltip("Максимальный модуль camera reward за одно новое измерение. 0 отключает ограничение.")]
+    [Min(0f)] public float cameraRewardClamp = 0.02f;
 
     [Tooltip("Штраф за неудачную попытку захвата (клешня закрыта или мяч вне зоны)")]
     public float failedGrabPenalty = -0.1f;
@@ -284,7 +292,6 @@ public class RobotBrain : Agent
     private Rigidbody ballRb;
     private Collider ballCollider;
     private float lastDistanceToBall;
-    private bool hasBall;
     private bool targetVisible;
     private float stepsSinceLastDetection;
     private float lastKnownAngle;
@@ -292,7 +299,15 @@ public class RobotBrain : Agent
     private float lastKnownAspectRatio;
     private float prevGas;
     private float prevSteer;
-    private float prevAbsAngle = 180f;
+    private float previousCameraScore;
+    private bool previousCameraVisible;
+    private bool cameraMeasurementPending;
+    private bool hasSeenCameraMeasurement;
+    private ulong lastCameraMeasurementVersion;
+    private float cameraScoreSum;
+    private int cameraMeasurementCount;
+    private int targetAcquiredCount;
+    private int targetLostCount;
     private bool grabZoneRewardGranted;
     private int previousGripCommand = 0; // Предыдущая команда клешни (0 – ничего, 1 – захват, 2 – отпустить)
 
@@ -351,6 +366,10 @@ public class RobotBrain : Agent
         rewardCountDict = new Dictionary<string, int>();
         episodeStepCounter = 0;
         statsSent = false;
+        cameraScoreSum = 0f;
+        cameraMeasurementCount = 0;
+        targetAcquiredCount = 0;
+        targetLostCount = 0;
     }
 
     private static bool IsLoadedSceneObject(Transform target)
@@ -440,6 +459,10 @@ public class RobotBrain : Agent
         rewardCountDict.Clear();
         episodeStepCounter = 0;
         statsSent = false;
+        cameraScoreSum = 0f;
+        cameraMeasurementCount = 0;
+        targetAcquiredCount = 0;
+        targetLostCount = 0;
         pendingCollisionPenalties = 0;
         nextCollisionPenaltyTime = Time.fixedTime;
 
@@ -503,7 +526,6 @@ public class RobotBrain : Agent
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        hasBall = false;
         targetVisible = false;
         stepsSinceLastDetection = 0f;
         lastKnownAngle = 0f;
@@ -511,7 +533,11 @@ public class RobotBrain : Agent
         lastKnownAspectRatio = 0f;
         prevGas = 0f;
         prevSteer = 0f;
-        prevAbsAngle = 180f;
+        previousCameraScore = 0f;
+        previousCameraVisible = false;
+        cameraMeasurementPending = false;
+        hasSeenCameraMeasurement = false;
+        lastCameraMeasurementVersion = 0;
         grabZoneRewardGranted = false;
         lastDistanceToBall = ball != null && holdPoint != null
             ? Vector3.Distance(holdPoint.position, ball.position)
@@ -581,27 +607,32 @@ public class RobotBrain : Agent
         return false;
     }
 
-    public bool TryGetSelectedVision(
-        out (float angle, float areaRatio, float aspectRatio, bool visible) targetInfo)
+    private SimulatedYoloCamera GetSelectedVisionSource()
     {
-        SimulatedYoloCamera selectedVision = yoloCamera;
         if (useRealRobotIo)
         {
             if (realVision == null)
-            {
                 realVision = FindAnyObjectByType<RealVision>();
-            }
 
-            if (realVision == null || !realVision.HasFreshPacket)
-            {
-                targetInfo = (0f, 0f, 0f, false);
-                return false;
-            }
-
-            selectedVision = realVision;
+            return realVision;
         }
 
+        return yoloCamera;
+    }
+
+    public bool TryGetSelectedVision(
+        out (float angle, float areaRatio, float aspectRatio, bool visible) targetInfo)
+    {
+        SimulatedYoloCamera selectedVision = GetSelectedVisionSource();
+
         if (selectedVision == null)
+        {
+            targetInfo = (0f, 0f, 0f, false);
+            return false;
+        }
+
+        if (useRealRobotIo && selectedVision is RealVision selectedRealVision &&
+            !selectedRealVision.HasFreshPacket)
         {
             targetInfo = (0f, 0f, 0f, false);
             return false;
@@ -622,7 +653,21 @@ public class RobotBrain : Agent
         sensor.AddObservation(ultrasonicMeters);
 
         // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость)
+        SimulatedYoloCamera selectedVision = GetSelectedVisionSource();
         TryGetSelectedVision(out var targetInfo);
+
+        if (selectedVision != null)
+        {
+            ulong measurementVersion = selectedVision.MeasurementVersion;
+            bool sourceHasMeasurement = !(selectedVision is RealVision) || measurementVersion > 0;
+            if (sourceHasMeasurement &&
+                (!hasSeenCameraMeasurement || measurementVersion != lastCameraMeasurementVersion))
+            {
+                cameraMeasurementPending = true;
+                hasSeenCameraMeasurement = true;
+                lastCameraMeasurementVersion = measurementVersion;
+            }
+        }
 
         targetVisible = targetInfo.visible;
         if (targetInfo.visible)
@@ -643,7 +688,7 @@ public class RobotBrain : Agent
         sensor.AddObservation(isGripperOpen ? 1f : 0f);
 
         // 4. Доля шагов без обнаружения цели
-        sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / noDetectionSteps));
+        sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / Mathf.Max(1f, noDetectionSteps)));
 
         // ----- 5. ПРЕДЫДУЩИЕ ДЕЙСТВИЯ (только один предыдущий шаг) -----
         // Газ и руль с учётом клиппинга
@@ -706,21 +751,35 @@ public class RobotBrain : Agent
         float smoothnessPenalty = -smoothnessPenaltyScale * (gasDelta + steerDelta);
         AddRewardWithStats("SmoothnessPenalty", smoothnessPenalty);
 
-        // 3. Награда за уменьшение угла до мяча (если цель видна)
-        if (targetVisible)
+        // 3. Потенциальная награда за положение цели в кадре. Рассчитывается только
+        // один раз для каждого нового измерения камеры, а не для повторяемых действий.
+        if (cameraMeasurementPending)
         {
-            float currentAbsAngle = Mathf.Abs(lastKnownAngle);
-            if (prevAbsAngle < 180f)
+            cameraMeasurementPending = false;
+
+            float currentCameraScore = 0f;
+            if (targetVisible)
             {
-                float angleImprovement = prevAbsAngle - currentAbsAngle;
-                float reward = angleRewardScale * angleImprovement;
-                AddRewardWithStats("AngleReward", reward);
+                float absoluteAngle = Mathf.Abs(Mathf.Clamp(lastKnownAngle, -1f, 1f));
+                float normalizedError = Mathf.InverseLerp(cameraAngleDeadZone, 1f, absoluteAngle);
+                currentCameraScore = 1f - normalizedError;
             }
-            prevAbsAngle = currentAbsAngle;
-        }
-        else
-        {
-            prevAbsAngle = 180f;
+
+            float cameraReward = cameraRewardScale * (currentCameraScore - previousCameraScore);
+            if (cameraRewardClamp > 0f)
+                cameraReward = Mathf.Clamp(cameraReward, -cameraRewardClamp, cameraRewardClamp);
+
+            AddRewardWithStats("CameraReward", cameraReward);
+            cameraScoreSum += currentCameraScore;
+            cameraMeasurementCount++;
+
+            if (targetVisible && !previousCameraVisible)
+                targetAcquiredCount++;
+            else if (!targetVisible && previousCameraVisible)
+                targetLostCount++;
+
+            previousCameraScore = currentCameraScore;
+            previousCameraVisible = targetVisible;
         }
 
         // 4. Бонус за нахождение в зоне захвата (однократно за эпизод)
@@ -791,18 +850,22 @@ public class RobotBrain : Agent
         // 7. Успешный захват мяча – главная положительная цель
         if (!useRealRobotIo && commandResult.IsGrabbing)
         {
-            hasBall = true;
             AddRewardWithStats("GripReward", gripReward);
             SendStatsToTensorBoard();
             EndEpisode();
             return;
         }
 
-        // 8. Выход за границы арены или падение
-        Vector3 displacement = rb.position - startPos;
-        bool outsideArena = Mathf.Abs(displacement.x) > arenaHalfExtents.x
-            || Mathf.Abs(displacement.z) > arenaHalfExtents.y
-            || displacement.y < -fallDistance;
+        // 8. Только аварийный вылет далеко за физические стены или падение.
+        // Границы считаются от центра арены, а не от случайной стартовой позиции робота.
+        Vector3 arenaCenter = environmentManager != null
+            ? environmentManager.transform.position
+            : initialStartPos;
+        Vector3 displacementFromArenaCenter = rb.position - arenaCenter;
+        bool escapedArena = Mathf.Abs(displacementFromArenaCenter.x) > arenaHalfExtents.x + arenaEscapeMargin
+            || Mathf.Abs(displacementFromArenaCenter.z) > arenaHalfExtents.y + arenaEscapeMargin;
+        bool fellFromFloor = rb.position.y < startPos.y - fallDistance;
+        bool outsideArena = escapedArena || fellFromFloor;
 
         if (outsideArena)
         {
@@ -812,15 +875,10 @@ public class RobotBrain : Agent
             return;
         }
 
-        // 9. Долгая потеря цели – штраф и прерывание
-        bool isInGrabZone = gripper != null && ball != null && holdPoint != null && 
-                            Vector3.Distance(holdPoint.position, ball.position) < grabZoneRadius;
-        if (!isInGrabZone && stepsSinceLastDetection > noDetectionSteps)
-        {
-            AddRewardWithStats("NoDetection", noDetectionPenalty);
+        // MaxStep завершается внутри ML-Agents сразу после OnActionReceived.
+        // Отправляем пользовательскую статистику до автоматического сброса награды.
+        if (MaxStep > 0 && StepCount >= MaxStep)
             SendStatsToTensorBoard();
-            EndEpisode();
-        }
     }
 
     private void OnCollisionEnter(Collision collision)
@@ -911,6 +969,14 @@ public class RobotBrain : Agent
 
         statsRecorder.Add("Rewards/TotalEpisodeReward", GetCumulativeReward());
         statsRecorder.Add("Rewards/EpisodeLength", episodeStepCounter);
+        statsRecorder.Add(
+            "Camera/Score",
+            cameraMeasurementCount > 0 ? cameraScoreSum / cameraMeasurementCount : 0f);
+        rewardSumDict.TryGetValue("CameraReward", out float cameraRewardSum);
+        statsRecorder.Add("Camera/Reward", cameraRewardSum);
+        statsRecorder.Add("Camera/Measurements", cameraMeasurementCount);
+        statsRecorder.Add("Camera/TargetAcquired", targetAcquiredCount);
+        statsRecorder.Add("Camera/TargetLost", targetLostCount);
 
         foreach (var kvp in rewardSumDict)
         {
