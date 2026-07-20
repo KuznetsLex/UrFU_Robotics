@@ -600,13 +600,23 @@ public class RobotBrain : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1. Ультразвук (сырое расстояние)
+        // 1. Ультразвук (сырое расстояние) и ИК-датчики
         TryGetSelectedRangeSensors(
             out float ultrasonicMeters,
-            out _,
-            out _,
-            out _);
+            out bool leftIr,
+            out bool rightIr,
+            out bool _);
+
         sensor.AddObservation(ultrasonicMeters);
+        sensor.AddObservation(leftIr ? 1f : 0f);
+        sensor.AddObservation(rightIr ? 1f : 0f);
+
+        float gripperIrValue = 0f;
+        if (sensors != null)
+        {
+            gripperIrValue = sensors.GetGripperIR(); // 0 или 1
+        }
+        sensor.AddObservation(gripperIrValue);
 
         // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость)
         TryGetSelectedVision(out var targetInfo);
