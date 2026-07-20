@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // Размножает одну обучающую площадку (арену) в сетку из нескольких копий
@@ -34,6 +35,12 @@ public class ArenaSpawner : MonoBehaviour
 
     [Tooltip("Сколько арен размещать в одном ряду сетки")]
     public int arenasPerRow = 4;
+
+    private readonly List<EnvironmentManager> arenaEnvironments = new List<EnvironmentManager>();
+
+    // Для TrainingCameraController — чтобы переключаться между аренами, не
+    // пересчитывая заново сетку по arenaCount/spacing/arenasPerRow.
+    public IReadOnlyList<EnvironmentManager> ArenaEnvironments => arenaEnvironments;
 
     void Awake()
     {
@@ -98,6 +105,7 @@ public class ArenaSpawner : MonoBehaviour
             env.targetBall = ball;
             brain.environmentManager = env;
             CreateFloor(env);
+            arenaEnvironments.Add(env);
         }
     }
 
