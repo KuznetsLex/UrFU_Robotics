@@ -175,6 +175,10 @@ public class RobotBrain : Agent
         set => UseRealRobotIo = value;
     }
 
+    [Header("Inference Debug")]
+    [Tooltip("Логировать изменения команды захвата, Grip IR, триггера и состояния клешни.")]
+    public bool logGripperInferenceDebug;
+
     [Tooltip("Опционально: если назначен, периодически генерирует новые стены/путь/препятствия и переставляет робота и мяч, вместо возврата на фиксированную стартовую позицию")]
     public EnvironmentManager environmentManager;
 
@@ -320,6 +324,13 @@ public class RobotBrain : Agent
     private SimulationRobotCommandSink simulationCommandSink;
     private int pendingCollisionPenalties;
     private float nextCollisionPenaltyTime;
+    private bool hasGripperDebugSnapshot;
+    private RobotGripperCommand lastDebugGripCommand;
+    private RobotGripAttemptResult lastDebugGripAttempt;
+    private bool lastDebugTargetInTrigger;
+    private bool lastDebugGripperIr;
+    private bool lastDebugIsOpen;
+    private bool lastDebugIsGrabbing;
 
     // ==================== МЕТОДЫ ЖИЗНЕННОГО ЦИКЛА ====================
 
@@ -541,6 +552,7 @@ public class RobotBrain : Agent
             ? Vector3.Distance(holdPoint.position, ball.position)
             : 0f;
         previousGripCommand = 0;
+        hasGripperDebugSnapshot = false;
     }
 
     private void ResetBall()
@@ -736,9 +748,35 @@ public class RobotBrain : Agent
         float normalizedLinear = maxLinearCommand > Mathf.Epsilon
             ? clampedGas / maxLinearCommand
             : 0f;
+
+        bool targetInTrigger = false;
+        bool gripperIrTriggered = false;
+        bool gripperOpenBeforeCommand = false;
+        if (logGripperInferenceDebug)
+        {
+            GripperController simulationGripper = gripperTransform?.GetComponent<GripperController>();
+            targetInTrigger = !useRealRobotIo &&
+                simulationGripper != null &&
+                simulationGripper.HasTargetInTrigger;
+            gripperIrTriggered = !useRealRobotIo &&
+                sensors != null &&
+                sensors.GetGripperIR() > 0.5f;
+            TryGetSelectedGripperState(out gripperOpenBeforeCommand);
+        }
+
         var robotCommand = new RobotCommand(normalizedLinear, clampedSteer, gripCommand);
         RobotCommandResult commandResult = GetSelectedCommandSink()?.ApplyCommand(robotCommand)
             ?? RobotCommandResult.Unavailable;
+
+        if (logGripperInferenceDebug)
+        {
+            LogGripperInferenceState(
+                gripCommand,
+                commandResult,
+                gripperOpenBeforeCommand,
+                targetInTrigger,
+                gripperIrTriggered);
+        }
 
         // ---------- НАГРАДЫ И ШТРАФЫ (каждый шаг) ----------
 
@@ -913,6 +951,50 @@ public class RobotBrain : Agent
 
         pendingCollisionPenalties++;
         nextCollisionPenaltyTime = Time.fixedTime + collisionPenaltyCooldown;
+    }
+
+    private void LogGripperInferenceState(
+        RobotGripperCommand gripCommand,
+        RobotCommandResult commandResult,
+        bool gripperOpenBeforeCommand,
+        bool targetInTrigger,
+        bool gripperIrTriggered)
+    {
+        if (!logGripperInferenceDebug)
+            return;
+
+        bool stateChanged = !hasGripperDebugSnapshot ||
+            gripCommand != lastDebugGripCommand ||
+            commandResult.GripAttempt != lastDebugGripAttempt ||
+            targetInTrigger != lastDebugTargetInTrigger ||
+            gripperIrTriggered != lastDebugGripperIr ||
+            commandResult.IsGripperOpen != lastDebugIsOpen ||
+            commandResult.IsGrabbing != lastDebugIsGrabbing;
+
+        if (!stateChanged)
+            return;
+
+        float distanceToBall = ball != null && holdPoint != null
+            ? Vector3.Distance(holdPoint.position, ball.position)
+            : -1f;
+
+        Debug.Log(
+            $"[GripInference] agent={name}#{GetInstanceID()} step={episodeStepCounter} " +
+            $"action={gripCommand} trigger={(targetInTrigger ? 1 : 0)} " +
+            $"ir={(gripperIrTriggered ? 1 : 0)} distance={distanceToBall:F3} " +
+            $"openBefore={(gripperOpenBeforeCommand ? 1 : 0)} " +
+            $"openAfter={(commandResult.IsGripperOpen ? 1 : 0)} " +
+            $"grabbing={(commandResult.IsGrabbing ? 1 : 0)} " +
+            $"attempt={commandResult.GripAttempt}",
+            this);
+
+        hasGripperDebugSnapshot = true;
+        lastDebugGripCommand = gripCommand;
+        lastDebugGripAttempt = commandResult.GripAttempt;
+        lastDebugTargetInTrigger = targetInTrigger;
+        lastDebugGripperIr = gripperIrTriggered;
+        lastDebugIsOpen = commandResult.IsGripperOpen;
+        lastDebugIsGrabbing = commandResult.IsGrabbing;
     }
 
     // ==================== ЭВРИСТИЧЕСКИЙ РЕЖИМ ====================

@@ -2264,6 +2264,7 @@ MonoBehaviour:
   holdPoint: {fileID: 4065118821553703660}
   ball: {fileID: 0}
   useRealRobotIo: 0
+  logGripperInferenceDebug: 0
   environmentManager: {fileID: 0}
   regenerateEveryEpisodes: 10
   wallPenalty: -0.01
