@@ -208,4 +208,5 @@ public class GripperController : MonoBehaviour
     // ========== СВОЙСТВА ДЛЯ ВНЕШНЕГО ДОСТУПА ==========
     public bool IsGrabbing => isGrabbing;
     public bool IsOpen => isOpen;
+    public bool HasTargetInTrigger => ballInTrigger != null;
 }
