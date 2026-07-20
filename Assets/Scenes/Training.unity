@@ -166,7 +166,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 54dbdb2ff48c233408a417605197a4cf, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnvironmentManager
   robot: {fileID: 0}
   targetBall: {fileID: 0}
@@ -225,7 +225,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 24430e11fbe846a8b4165e5bb41586ca, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TrainingCameraController
   targetCamera: {fileID: 0}
   zoomSpeed: 40
@@ -269,7 +269,7 @@ MonoBehaviour:
   - {fileID: 443588116}
   - {fileID: 555000112}
   floorMargin: 1.2
-  arenaCount: 20
+  arenaCount: 1
   spacing: 100
   arenasPerRow: 4
 --- !u!4 &1069484985
@@ -414,6 +414,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 8001122334455667, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -454,13 +458,13 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 7249387473627970349, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_Size.x
-      value: 2.433279
+    - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: stepPenalty
+      value: -0.0001
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: wallPenalty
-      value: -0.01
+      value: -0.05
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: fallDistance
@@ -468,11 +472,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: grabZoneRadius
-      value: 0.75
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: noDetectionSteps
-      value: 2000
+      value: 10000000
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: grabAttemptReward
@@ -487,12 +491,24 @@ PrefabInstance:
       value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 6991420772225542318, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_BehaviorType
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6991420772225542318, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_BrainParameters.VectorObservationSize
       value: 13
       objectReference: {fileID: 0}
     - target: {fileID: 6991420772225542318, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_BrainParameters.NumStackedVectorObservations
       value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7249387473627970349, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Size.x
+      value: 2.433279
+      objectReference: {fileID: 0}
+    - target: {fileID: 7249387473627970349, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Center.x
+      value: 2.6979184
       objectReference: {fileID: 0}
     - target: {fileID: 8249311652206390590, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: verticalTiltRange.x
@@ -502,10 +518,6 @@ PrefabInstance:
       propertyPath: verticalTiltRange.y
       value: 10
       objectReference: {fileID: 0}
-    - target: {fileID: 7249387473627970349, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_Center.x
-      value: 2.6979184
-      objectReference: {fileID: 0}
     - target: {fileID: 8420677910478226421, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_Name
       value: Xiao-r GFS-X_1
@@ -514,7 +526,8 @@ PrefabInstance:
       propertyPath: angle
       value: 8
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 8001122334455667, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []

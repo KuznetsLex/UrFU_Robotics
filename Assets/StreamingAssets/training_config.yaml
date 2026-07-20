@@ -21,9 +21,9 @@
 #   moveRewardScale: 0.01
 #   fallDistance: 3
 #   arenaEscapeMargin: 2
-#   noDetectionSteps: 1000
-#   grabAttemptReward: 0.1
-#   grabZoneRadius: 1
+#   noDetectionSteps: 0
+#   grabAttemptReward: 0.3
+#   grabZoneRadius: 0.75
 #   smoothnessPenaltyScale: 0.002
 #   cameraRewardScale: 0.02
 #   cameraAngleDeadZone: 0.05
