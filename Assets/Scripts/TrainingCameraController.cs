@@ -2,10 +2,11 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 // Обзорная камера для мульти-арена сцены: колесо мыши зумит (ортографический
-// размер), [ и ] (или PageUp/PageDown, если есть) переключают фокус между
-// аренами по очереди, Backspace или Home возвращает к общему виду всей сетки.
-// Без этого при arenaCount=20 каждая отдельная арена — крошечная точка на
-// экране, и разглядеть, что реально происходит в конкретной клетке, нельзя.
+// размер), средняя кнопка мыши (или I/J/K/L) свободно панорамирует вдоль пола,
+// [ и ] (или PageUp/PageDown, если есть) переключают фокус между аренами по
+// очереди, Backspace или Home возвращает к общему виду всей сетки. Без этого
+// при arenaCount=20 каждая отдельная арена — крошечная точка на экране, и
+// разглядеть, что реально происходит в конкретной клетке, нельзя.
 // Отдельный (не навешанный на саму камеру) объект — чтобы не трогать
 // PrefabInstance основной камеры в сцене, скрипт сам находит Camera.main.
 public class TrainingCameraController : MonoBehaviour
@@ -18,6 +19,12 @@ public class TrainingCameraController : MonoBehaviour
     public float zoomSpeed = 40f;
     public float minOrthographicSize = 3f;
     public float maxOrthographicSize = 400f;
+
+    [Header("Панорамирование вдоль пола")]
+    [Tooltip("Перетаскивание средней кнопкой мыши, как в самом редакторе Unity")]
+    public bool dragToPan = true;
+    [Tooltip("Скорость панорамирования клавишами I/J/K/L — доля текущего orthographic size в секунду")]
+    public float keyboardPanSpeed = 1.5f;
 
     [Header("Переключение между аренами")]
     [Tooltip("Если не назначен — ищется автоматически через FindAnyObjectByType")]
@@ -50,6 +57,7 @@ public class TrainingCameraController : MonoBehaviour
     private void Update()
     {
         HandleZoom();
+        HandlePan();
         HandleArenaSwitching();
     }
 
@@ -66,6 +74,35 @@ public class TrainingCameraController : MonoBehaviour
             cam.orthographicSize - scroll * zoomSpeed * 0.01f,
             minOrthographicSize,
             maxOrthographicSize);
+    }
+
+    // Свободное панорамирование по X/Z (уровень пола) — в дополнение к дискретному
+    // переключению между аренами, чтобы можно было встать, например, ровно между
+    // двумя соседними аренами и видеть обе сразу, а не только центр одной из них.
+    private void HandlePan()
+    {
+        Vector3 pan = Vector3.zero;
+
+        if (dragToPan && Mouse.current != null && Mouse.current.middleButton.isPressed)
+        {
+            Vector2 delta = Mouse.current.delta.ReadValue();
+            // Мировых юнитов на пиксель — одинаково по X и Y для ортографической
+            // камеры без искажений (высота вьюпорта в мировых юнитах = 2*size).
+            float worldPerPixel = 2f * cam.orthographicSize / Mathf.Max(1, Screen.height);
+            pan -= (cam.transform.right * delta.x + cam.transform.up * delta.y) * worldPerPixel;
+        }
+
+        if (Keyboard.current != null)
+        {
+            float speed = keyboardPanSpeed * cam.orthographicSize * Time.unscaledDeltaTime;
+            if (Keyboard.current.jKey.isPressed) pan -= cam.transform.right * speed;
+            if (Keyboard.current.lKey.isPressed) pan += cam.transform.right * speed;
+            if (Keyboard.current.iKey.isPressed) pan += cam.transform.up * speed;
+            if (Keyboard.current.kKey.isPressed) pan -= cam.transform.up * speed;
+        }
+
+        if (pan != Vector3.zero)
+            cam.transform.position += pan;
     }
 
     private void HandleArenaSwitching()
