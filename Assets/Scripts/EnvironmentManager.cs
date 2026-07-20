@@ -49,6 +49,13 @@ public class EnvironmentManager : MonoBehaviour
         obstacleMask |= 1 << obstacleLayer;
     }
 
+    void Awake()
+    {
+        // До первого GenerateArena() — иначе стены/пол уже построятся со
+        // старыми значениями globalScale/baseArenaSize/boxCount и т.д.
+        TrainingConfig.ApplyOverrides(this, "EnvironmentManager");
+    }
+
     void Update()
     {
         // F5, а не Space — Space занят захватом мяча в RobotBrain.Heuristic() и

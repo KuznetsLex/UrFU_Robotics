@@ -326,6 +326,7 @@ public class RobotBrain : Agent
     protected override void Awake()
     {
         base.Awake();
+        TrainingConfig.ApplyOverrides(this, "RobotBrain");
         rb = GetComponent<Rigidbody>();
         if (trackController == null) trackController = GetComponent<TrackController>();
         if (sensors == null) sensors = GetComponent<VirtualSensors>();

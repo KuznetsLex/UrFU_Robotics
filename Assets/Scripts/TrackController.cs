@@ -20,6 +20,7 @@ public class TrackController : MonoBehaviour
 
     private void Awake()
     {
+        TrainingConfig.ApplyOverrides(this, "TrackController");
         rb = GetComponent<Rigidbody>();
     }
 

@@ -19,6 +19,7 @@ public class VirtualSensors : MonoBehaviour
 
     private void Awake()
     {
+        TrainingConfig.ApplyOverrides(this, "VirtualSensors");
         if (obstacleLayer == 0)
             obstacleLayer = LayerMask.GetMask("Obstacle");
         robotBrain = GetComponent<RobotBrain>();
