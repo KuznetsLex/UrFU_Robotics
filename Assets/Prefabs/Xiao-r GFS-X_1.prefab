@@ -1180,7 +1180,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SimulatedYoloCamera
   maxVisibleDistance: 30
   horizontalFOV: 40
-  targetBall: {fileID: 3109124430721694727, guid: 8773bee89778e3c4d99fa415820efaf0, type: 3}
+  targetBall: {fileID: 0}
   obstacleLayer:
     serializedVersion: 2
     m_Bits: 1
@@ -2054,7 +2054,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 7
+    VectorObservationSize: 10
     NumStackedVectorObservations: 4
     m_ActionSpec:
       m_NumContinuousActions: 2
@@ -2118,7 +2118,7 @@ MonoBehaviour:
   yoloCamera: {fileID: 8249311652206390590}
   gripperTransform: {fileID: 4896793876978805614}
   holdPoint: {fileID: 4065118821553703660}
-  ball: {fileID: 3109124430721694727, guid: 8773bee89778e3c4d99fa415820efaf0, type: 3}
+  ball: {fileID: 0}
   wallPenalty: -0.01
   moveRewardScale: 0.01
   gripReward: 1

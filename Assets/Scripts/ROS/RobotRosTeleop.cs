@@ -32,7 +32,8 @@ namespace Team11.Ros
         private bool rightIrTriggered;
         private bool centerIrTriggered;
         private float lastSensorMessageTime = -1f;
-        private VirtualSensors simulationSensors;
+        private RobotBrain robotBrain;
+        private bool wasPublishingRealCommands;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -69,6 +70,18 @@ namespace Team11.Ros
 
         private void Update()
         {
+            bool useRealRobot = UsesRealRobotSensors();
+            if (!useRealRobot)
+            {
+                if (wasPublishingRealCommands)
+                {
+                    PublishStop();
+                    wasPublishingRealCommands = false;
+                }
+                return;
+            }
+
+            wasPublishingRealCommands = true;
             var keyboard = Keyboard.current;
 
             if (keyboard != null)
@@ -137,7 +150,13 @@ namespace Team11.Ros
         {
             if (ros == null)
             {
-                return;
+                ros = ROSConnection.GetOrCreateInstance();
+            }
+
+            var topic = ros.GetTopic(CommandTopic);
+            if (topic == null || !topic.IsPublisher)
+            {
+                ros.RegisterPublisher<TwistMsg>(CommandTopic, queue_size: 1);
             }
 
             var command = new TwistMsg(
@@ -161,11 +180,27 @@ namespace Team11.Ros
             lastSensorMessageTime = Time.unscaledTime;
         }
 
+        public bool TryGetFreshRobotSensors(
+            out float freshUltrasonicMeters,
+            out bool freshLeftIr,
+            out bool freshRightIr,
+            out bool freshCenterIr)
+        {
+            bool hasFreshData = lastSensorMessageTime >= 0f &&
+                Time.unscaledTime - lastSensorMessageTime <= SensorTimeoutSeconds;
+
+            freshUltrasonicMeters = hasFreshData ? (float)ultrasonicMeters : 0f;
+            freshLeftIr = hasFreshData && leftIrTriggered;
+            freshRightIr = hasFreshData && rightIrTriggered;
+            freshCenterIr = hasFreshData && centerIrTriggered;
+            return hasFreshData;
+        }
+
         private void OnApplicationFocus(bool hasFocus)
         {
             applicationHasFocus = hasFocus;
 
-            if (!hasFocus)
+            if (!hasFocus && wasPublishingRealCommands)
             {
                 PublishStop();
             }
@@ -173,61 +208,87 @@ namespace Team11.Ros
 
         private void OnDisable()
         {
-            PublishStop();
+            if (wasPublishingRealCommands)
+            {
+                PublishStop();
+            }
         }
 
         private void OnApplicationQuit()
         {
-            PublishStop();
+            if (wasPublishingRealCommands)
+            {
+                PublishStop();
+            }
+        }
+
+        private bool UsesRealRobotSensors()
+        {
+            if (robotBrain == null)
+            {
+                robotBrain = FindAnyObjectByType<RobotBrain>();
+            }
+
+            return robotBrain != null && robotBrain.UseRealRobotSensors;
         }
 
         private void OnGUI()
         {
             const int width = 440;
-            const int height = 174;
+            const int height = 226;
             var panel = new Rect(Screen.width - width - 10, 10, width, height);
-            bool hasRobotSensorData = lastSensorMessageTime >= 0f &&
-                Time.unscaledTime - lastSensorMessageTime <= SensorTimeoutSeconds;
 
-            bool hasDisplayData = hasRobotSensorData;
-            double displayUltrasonicMeters = ultrasonicMeters;
-            bool displayLeftIr = leftIrTriggered;
-            bool displayRightIr = rightIrTriggered;
-            bool displayCenterIr = centerIrTriggered;
-            string dataSource = hasRobotSensorData ? "ROBOT" : "NO DATA";
-
-            if (!hasRobotSensorData && TryReadSimulationSensors(
-                    out float simulationUltrasonicMeters,
-                    out bool simulationLeftIr,
-                    out bool simulationRightIr,
-                    out bool simulationCenterIr))
+            if (robotBrain == null)
             {
-                hasDisplayData = true;
-                displayUltrasonicMeters = simulationUltrasonicMeters;
-                displayLeftIr = simulationLeftIr;
-                displayRightIr = simulationRightIr;
-                displayCenterIr = simulationCenterIr;
-                dataSource = "SIMULATION";
+                robotBrain = FindAnyObjectByType<RobotBrain>();
             }
 
+            bool useRealSensors = robotBrain != null && robotBrain.UseRealRobotSensors;
+            string dataSource = useRealSensors ? "REAL ROBOT" : "SIMULATION";
+            float displayUltrasonicMeters = 0f;
+            bool displayLeftIr = false;
+            bool displayRightIr = false;
+            bool displayCenterIr = false;
+            bool hasDisplayData = robotBrain != null && robotBrain.TryGetSelectedRangeSensors(
+                out displayUltrasonicMeters,
+                out displayLeftIr,
+                out displayRightIr,
+                out displayCenterIr);
+
             GUI.Box(panel, $"Sensors — {dataSource}");
-            GUI.Label(new Rect(panel.x + 12, panel.y + 24, width - 24, 20),
-                $"{RobotIpAddress}:{RobotTcpPort}  |  topic: {CommandTopic}");
+            bool requestedRealSensors = GUI.Toggle(
+                new Rect(panel.x + 12, panel.y + 22, width - 24, 20),
+                useRealSensors,
+                "Use real robot sensors for inference");
+            if (robotBrain != null && requestedRealSensors != useRealSensors)
+            {
+                robotBrain.UseRealRobotSensors = requestedRealSensors;
+                useRealSensors = requestedRealSensors;
+                dataSource = useRealSensors ? "REAL ROBOT" : "SIMULATION";
+                hasDisplayData = robotBrain.TryGetSelectedRangeSensors(
+                    out displayUltrasonicMeters,
+                    out displayLeftIr,
+                    out displayRightIr,
+                    out displayCenterIr);
+            }
+
             GUI.Label(new Rect(panel.x + 12, panel.y + 44, width - 24, 20),
+                $"{RobotIpAddress}:{RobotTcpPort}  |  topic: {CommandTopic}");
+            GUI.Label(new Rect(panel.x + 12, panel.y + 64, width - 24, 20),
                 "WASD/arrows: drive   Space: E-STOP   Enter: reset E-STOP");
 
             string state = emergencyStop ? "E-STOP ACTIVE" : "ready";
-            GUI.Label(new Rect(panel.x + 12, panel.y + 64, width - 24, 20), $"State: {state}");
+            GUI.Label(new Rect(panel.x + 12, panel.y + 84, width - 24, 20), $"State: {state}");
 
             string sensorState = hasDisplayData
                 ? $"Ultrasonic: {displayUltrasonicMeters:F2} m  |  " +
                   $"raw IR L:{(displayLeftIr ? 1 : 0)} " +
                   $"R:{(displayRightIr ? 1 : 0)} C:{(displayCenterIr ? 1 : 0)}"
-                : "Sensors: no robot connection or simulation provider";
-            GUI.Label(new Rect(panel.x + 12, panel.y + 86, width - 24, 20), sensorState);
+                : $"{dataSource} sensors: no fresh data";
+            GUI.Label(new Rect(panel.x + 12, panel.y + 106, width - 24, 20), sensorState);
 
             DrawUltrasonicBar(
-                new Rect(panel.x + 12, panel.y + 108, width - 24, 10),
+                new Rect(panel.x + 12, panel.y + 128, width - 24, 10),
                 hasDisplayData,
                 displayUltrasonicMeters);
 
@@ -235,47 +296,29 @@ namespace Team11.Ros
             const float indicatorGap = 12f;
             float indicatorsX = panel.x + 12;
             DrawIrIndicator(
-                new Rect(indicatorsX, panel.y + 130, indicatorWidth, 28),
+                new Rect(indicatorsX, panel.y + 146, indicatorWidth, 28),
                 "IR left",
                 hasDisplayData,
                 displayLeftIr);
             DrawIrIndicator(
-                new Rect(indicatorsX + indicatorWidth + indicatorGap, panel.y + 130, indicatorWidth, 28),
+                new Rect(indicatorsX + indicatorWidth + indicatorGap, panel.y + 146, indicatorWidth, 28),
                 "IR right",
                 hasDisplayData,
                 displayRightIr);
             DrawIrIndicator(
-                new Rect(indicatorsX + (indicatorWidth + indicatorGap) * 2f, panel.y + 130, indicatorWidth, 28),
+                new Rect(indicatorsX + (indicatorWidth + indicatorGap) * 2f, panel.y + 146, indicatorWidth, 28),
                 "IR center",
                 hasDisplayData,
                 displayCenterIr);
-        }
 
-        private bool TryReadSimulationSensors(
-            out float simulationUltrasonicMeters,
-            out bool simulationLeftIr,
-            out bool simulationRightIr,
-            out bool simulationCenterIr)
-        {
-            if (simulationSensors == null)
-            {
-                simulationSensors = FindAnyObjectByType<VirtualSensors>();
-            }
-
-            if (simulationSensors != null)
-            {
-                return simulationSensors.TryReadSimulationSensors(
-                    out simulationUltrasonicMeters,
-                    out simulationLeftIr,
-                    out simulationRightIr,
-                    out simulationCenterIr);
-            }
-
-            simulationUltrasonicMeters = 0f;
-            simulationLeftIr = false;
-            simulationRightIr = false;
-            simulationCenterIr = false;
-            return false;
+            (float angle, float areaRatio, float aspectRatio, bool visible) vision =
+                (0f, 0f, 0f, false);
+            bool hasVisionData = robotBrain != null && robotBrain.TryGetSelectedVision(out vision);
+            string visionState = hasVisionData
+                ? $"Vision: visible={(vision.visible ? 1 : 0)} | angle={vision.angle:+0.000;-0.000;0.000} | " +
+                  $"area={vision.areaRatio:F4} | aspect={vision.aspectRatio:F3}"
+                : $"Vision ({dataSource}): no fresh data";
+            GUI.Label(new Rect(panel.x + 12, panel.y + 184, width - 24, 20), visionState);
         }
 
         private static void DrawUltrasonicBar(Rect rect, bool hasData, double distanceMeters)

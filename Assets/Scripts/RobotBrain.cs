@@ -4,6 +4,7 @@ using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
+using Team11.Ros;
 
 /// <summary>
 /// Мозг робота для обучения с подкреплением (ML-Agents).
@@ -20,6 +21,16 @@ public class RobotBrain : Agent
     public Transform gripperTransform;
     public Transform holdPoint;
     public Transform ball;
+
+    [Header("Inference input source")]
+    [Tooltip("Use physical robot sensors and YOLO packets instead of simulated sensors.")]
+    [SerializeField] private bool useRealRobotSensors;
+
+    public bool UseRealRobotSensors
+    {
+        get => useRealRobotSensors;
+        set => useRealRobotSensors = value;
+    }
 
     // ==================== ОСНОВНЫЕ НАГРАДЫ И ШТРАФЫ ====================
     [Header("Основные награды и штрафы")]
@@ -130,6 +141,8 @@ public class RobotBrain : Agent
     private Dictionary<string, int> rewardCountDict;
     private int episodeStepCounter;
     private bool statsSent;
+    private RobotRosTeleop robotSensorReceiver;
+    private RealVision realVision;
 
     // ==================== МЕТОДЫ ЖИЗНЕННОГО ЦИКЛА ====================
 
@@ -146,8 +159,11 @@ public class RobotBrain : Agent
         startPos = rb.position;
         startRot = rb.rotation;
 
-        if (ball == null)
+        if (!IsLoadedSceneObject(ball))
             ball = GameObject.FindWithTag("TargetBall")?.transform;
+
+        if (yoloCamera != null && !IsLoadedSceneObject(yoloCamera.targetBall))
+            yoloCamera.targetBall = ball;
 
         if (ball != null)
         {
@@ -167,6 +183,11 @@ public class RobotBrain : Agent
         statsSent = false;
     }
 
+    private static bool IsLoadedSceneObject(Transform target)
+    {
+        return target != null && target.gameObject.scene.IsValid() && target.gameObject.scene.isLoaded;
+    }
+
     /// <summary>
     /// Генерирует случайную позицию в пределах арены на заданной высоте Y.
     /// </summary>
@@ -179,7 +200,7 @@ public class RobotBrain : Agent
 
     public override void OnEpisodeBegin()
     {
-        if (isTraining)
+        if (isTraining && !useRealRobotSensors)
         {
             yoloCamera?.RandomizeDomainParameters();
         }
@@ -263,15 +284,89 @@ public class RobotBrain : Agent
 
     // ==================== СБОР НАБЛЮДЕНИЙ ====================
 
+    public bool TryGetSelectedRangeSensors(
+        out float ultrasonicMeters,
+        out bool leftIrTriggered,
+        out bool rightIrTriggered,
+        out bool centerIrTriggered)
+    {
+        if (!useRealRobotSensors)
+        {
+            if (sensors != null)
+            {
+                return sensors.TryReadSimulationSensors(
+                    out ultrasonicMeters,
+                    out leftIrTriggered,
+                    out rightIrTriggered,
+                    out centerIrTriggered);
+            }
+        }
+        else
+        {
+            if (robotSensorReceiver == null)
+            {
+                robotSensorReceiver = FindAnyObjectByType<RobotRosTeleop>();
+            }
+
+            if (robotSensorReceiver != null)
+            {
+                return robotSensorReceiver.TryGetFreshRobotSensors(
+                    out ultrasonicMeters,
+                    out leftIrTriggered,
+                    out rightIrTriggered,
+                    out centerIrTriggered);
+            }
+        }
+
+        ultrasonicMeters = 0f;
+        leftIrTriggered = false;
+        rightIrTriggered = false;
+        centerIrTriggered = false;
+        return false;
+    }
+
+    public bool TryGetSelectedVision(
+        out (float angle, float areaRatio, float aspectRatio, bool visible) targetInfo)
+    {
+        SimulatedYoloCamera selectedVision = yoloCamera;
+        if (useRealRobotSensors)
+        {
+            if (realVision == null)
+            {
+                realVision = FindAnyObjectByType<RealVision>();
+            }
+
+            if (realVision == null || !realVision.HasFreshPacket)
+            {
+                targetInfo = (0f, 0f, 0f, false);
+                return false;
+            }
+
+            selectedVision = realVision;
+        }
+
+        if (selectedVision == null)
+        {
+            targetInfo = (0f, 0f, 0f, false);
+            return false;
+        }
+
+        targetInfo = selectedVision.GetTargetInfo();
+        return true;
+    }
+
     public override void CollectObservations(VectorSensor sensor)
     {
         // 1. Ультразвук (сырое расстояние)
-        sensor.AddObservation(sensors.GetUltrasonicDistance());
+        TryGetSelectedRangeSensors(
+            out float ultrasonicMeters,
+            out _,
+            out _,
+            out _);
+        sensor.AddObservation(ultrasonicMeters);
 
         // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость)
-        var targetInfo = yoloCamera != null
-            ? yoloCamera.GetTargetInfo()
-            : (angle: 0f, areaRatio: 0f, aspectRatio: 0f, visible: false);
+        TryGetSelectedVision(out var targetInfo);
 
         targetVisible = targetInfo.visible;
         if (targetInfo.visible)
@@ -379,7 +474,12 @@ public class RobotBrain : Agent
         }
 
         // 6. Штрафы за близость к стенам (ультразвук)
-        if (sensors.GetUltrasonicDistance() < 0.5f)
+        if (TryGetSelectedRangeSensors(
+                out float rewardUltrasonicMeters,
+                out _,
+                out _,
+                out _) &&
+            rewardUltrasonicMeters < 0.5f)
             AddRewardWithStats("WallUltrasonic", wallPenalty * wallUltrasonicMultiplier);
 
         // 7. Штраф за высокую скорость в зоне захвата

@@ -33,6 +33,8 @@ public class SimulatedYoloCamera : MonoBehaviour
 
     public virtual (float angle, float areaRatio, float aspectRatio, bool visible) GetTargetInfo()
     {
+        ResolveSceneTarget();
+
         if (targetBall == null ||
             maxVisibleDistance <= 0f ||
             horizontalFOV <= 0f ||
@@ -62,6 +64,19 @@ public class SimulatedYoloCamera : MonoBehaviour
         return TryProjectBounds(bounds, out float angle, out float areaRatio, out float aspectRatio)
             ? (angle, areaRatio, aspectRatio, true)
             : (0f, 0f, 0f, false);
+    }
+
+    private void ResolveSceneTarget()
+    {
+        if (targetBall != null &&
+            targetBall.gameObject.scene.IsValid() &&
+            targetBall.gameObject.scene.isLoaded)
+        {
+            return;
+        }
+
+        GameObject sceneTarget = GameObject.FindWithTag("TargetBall");
+        targetBall = sceneTarget != null ? sceneTarget.transform : null;
     }
 
     private bool TryGetTargetBounds(out Bounds bounds)

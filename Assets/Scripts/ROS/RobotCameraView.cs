@@ -19,6 +19,8 @@ namespace Team11.Ros
         private const float FallbackConnectTimeoutSeconds = 3f;
         private const float FallbackReadTimeoutSeconds = 3f;
         private const int MaxMjpegFrameBytes = 8 * 1024 * 1024;
+        private const int VirtualFrameWidth = 320;
+        private const int VirtualFrameHeight = 240;
 
         private Texture2D cameraTexture;
         private HttpClient snapshotHttpClient;
@@ -26,11 +28,14 @@ namespace Team11.Ros
         private CancellationTokenSource streamCancellation;
         private Task streamTask;
         private byte[] pendingStreamFrame;
-        private string streamError = "waiting for MJPEG stream";
         private Coroutine pollingCoroutine;
-        private string status = "Waiting for robot camera";
         private float lastFrameTime = -1f;
         private RealVision realVision;
+        private RobotBrain robotBrain;
+        private SimulatedYoloCamera simulatedVision;
+        private GameObject simulatedCameraObject;
+        private Camera simulatedCamera;
+        private RenderTexture simulatedCameraTexture;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -46,6 +51,7 @@ namespace Team11.Ros
         private void OnEnable()
         {
             realVision = FindAnyObjectByType<RealVision>();
+            robotBrain = FindAnyObjectByType<RobotBrain>();
             cameraTexture = new Texture2D(2, 2, TextureFormat.RGB24, false);
             snapshotHttpClient = new HttpClient
             {
@@ -81,6 +87,7 @@ namespace Team11.Ros
             snapshotHttpClient = null;
             streamHttpClient?.Dispose();
             streamHttpClient = null;
+            DestroySimulatedCameraPreview();
         }
 
         private void OnDestroy()
@@ -89,12 +96,21 @@ namespace Team11.Ros
             {
                 Destroy(cameraTexture);
             }
+
+            DestroySimulatedCameraPreview();
         }
 
         private IEnumerator PollCamera()
         {
             while (enabled)
             {
+                if (!UsesRealRobotSensors())
+                {
+                    StopMjpegStream();
+                    yield return new WaitForSecondsRealtime(RefreshIntervalSeconds);
+                    continue;
+                }
+
                 Task<byte[]> downloadTask = snapshotHttpClient.GetByteArrayAsync(PrimaryCameraFrameUrl);
                 while (!downloadTask.IsCompleted)
                 {
@@ -107,11 +123,9 @@ namespace Team11.Ros
                     cameraTexture.LoadImage(downloadTask.Result, false))
                 {
                     lastFrameTime = Time.unscaledTime;
-                    status = $"LIVE  {cameraTexture.width}x{cameraTexture.height}  [primary]";
                 }
                 else
                 {
-                    status = "Primary unavailable; connecting to MJPEG :8081";
                     StartMjpegStream();
                     while (enabled && streamTask != null && !streamTask.IsCompleted)
                     {
@@ -126,7 +140,6 @@ namespace Team11.Ros
                     }
 
                     StopMjpegStream();
-                    status = $"MJPEG unavailable ({streamError}); retrying primary";
                 }
 
                 yield return new WaitForSecondsRealtime(RefreshIntervalSeconds);
@@ -136,7 +149,6 @@ namespace Team11.Ros
         private void StartMjpegStream()
         {
             StopMjpegStream();
-            streamError = "connecting";
             streamCancellation = new CancellationTokenSource();
             CancellationToken cancellationToken = streamCancellation.Token;
             streamTask = Task.Run(() => ReadMjpegStream(cancellationToken), cancellationToken);
@@ -162,7 +174,6 @@ namespace Team11.Ros
             }
 
             lastFrameTime = Time.unscaledTime;
-            status = $"LIVE  {cameraTexture.width}x{cameraTexture.height}  [MJPEG :8081]";
             return true;
         }
 
@@ -255,27 +266,138 @@ namespace Team11.Ros
             }
             catch (OperationCanceledException)
             {
-                streamError = cancellationToken.IsCancellationRequested
-                    ? "stopped"
-                    : "connection timed out";
             }
-            catch (Exception error)
+            catch (Exception)
             {
-                streamError = error.Message;
             }
+        }
+
+        private void LateUpdate()
+        {
+            if (UsesRealRobotSensors() || !EnsureSimulatedCameraPreview())
+            {
+                return;
+            }
+
+            float aspect = Mathf.Max(0.1f, simulatedVision.cameraAspectRatio);
+            float horizontalFovRadians = Mathf.Clamp(simulatedVision.horizontalFOV, 1f, 179f) * Mathf.Deg2Rad;
+            simulatedCamera.aspect = aspect;
+            simulatedCamera.fieldOfView = 2f * Mathf.Atan(
+                Mathf.Tan(horizontalFovRadians * 0.5f) / aspect) * Mathf.Rad2Deg;
+            simulatedCamera.farClipPlane = Mathf.Max(
+                simulatedCamera.nearClipPlane + 0.1f,
+                simulatedVision.maxVisibleDistance);
+            simulatedCamera.Render();
+        }
+
+        private bool UsesRealRobotSensors()
+        {
+            if (robotBrain == null)
+            {
+                robotBrain = FindAnyObjectByType<RobotBrain>();
+            }
+
+            return robotBrain != null && robotBrain.UseRealRobotSensors;
+        }
+
+        private bool EnsureSimulatedCameraPreview()
+        {
+            SimulatedYoloCamera selectedVision = robotBrain != null ? robotBrain.yoloCamera : null;
+            if (selectedVision == null)
+            {
+                return false;
+            }
+
+            if (simulatedVision != selectedVision)
+            {
+                DestroySimulatedCameraPreview();
+                simulatedVision = selectedVision;
+            }
+
+            if (simulatedCamera != null && simulatedCameraTexture != null)
+            {
+                return true;
+            }
+
+            simulatedCameraObject = new GameObject("Virtual Camera Preview")
+            {
+                hideFlags = HideFlags.DontSave
+            };
+            simulatedCameraObject.transform.SetParent(simulatedVision.transform, false);
+
+            simulatedCamera = simulatedCameraObject.AddComponent<Camera>();
+            simulatedCamera.enabled = false;
+            simulatedCamera.clearFlags = CameraClearFlags.SolidColor;
+            simulatedCamera.backgroundColor = Color.black;
+            simulatedCamera.nearClipPlane = 0.01f;
+            simulatedCamera.allowHDR = false;
+            simulatedCamera.allowMSAA = false;
+
+            simulatedCameraTexture = new RenderTexture(
+                VirtualFrameWidth,
+                VirtualFrameHeight,
+                16,
+                RenderTextureFormat.ARGB32)
+            {
+                name = "Virtual Camera Preview Texture"
+            };
+            simulatedCameraTexture.Create();
+            simulatedCamera.targetTexture = simulatedCameraTexture;
+            return true;
+        }
+
+        private void DestroySimulatedCameraPreview()
+        {
+            if (simulatedCamera != null)
+            {
+                simulatedCamera.targetTexture = null;
+            }
+
+            if (simulatedCameraTexture != null)
+            {
+                simulatedCameraTexture.Release();
+                Destroy(simulatedCameraTexture);
+            }
+
+            if (simulatedCameraObject != null)
+            {
+                Destroy(simulatedCameraObject);
+            }
+
+            simulatedCameraTexture = null;
+            simulatedCamera = null;
+            simulatedCameraObject = null;
+            simulatedVision = null;
         }
 
         private void OnGUI()
         {
             GUI.depth = -500;
-            const float panelWidth = 340f;
-            const float panelHeight = 352f;
+            const float frameWidth = 260f;
+            const float frameHeight = 195f;
+            const float panelWidth = 280f;
+            const float panelHeight = 229f;
             var panel = new Rect(10f, 42f, panelWidth, panelHeight);
-            GUI.Box(panel, "Robot camera");
+            bool useRealCamera = UsesRealRobotSensors();
+            GUI.Box(panel, useRealCamera ? "Robot camera" : "Virtual camera");
+
+            var frameRect = new Rect(panel.x + 10f, panel.y + 24f, frameWidth, frameHeight);
+            if (!useRealCamera)
+            {
+                if (simulatedCameraTexture != null)
+                {
+                    GUI.DrawTexture(frameRect, simulatedCameraTexture, ScaleMode.ScaleToFit, false);
+                }
+                else
+                {
+                    GUI.Box(frameRect, "Virtual camera unavailable");
+                }
+
+                return;
+            }
 
             bool hasFrame = lastFrameTime >= 0f;
             bool frameIsFresh = hasFrame && Time.unscaledTime - lastFrameTime < 2f;
-            var frameRect = new Rect(panel.x + 10f, panel.y + 24f, 320f, 240f);
             if (hasFrame && cameraTexture != null)
             {
                 GUI.DrawTexture(frameRect, cameraTexture, ScaleMode.ScaleToFit, false);
@@ -283,61 +405,11 @@ namespace Team11.Ros
                 {
                     DrawYoloOverlay(frameRect);
                 }
-                else
-                {
-                    GUI.Box(new Rect(frameRect.x + 6f, frameRect.y + 6f, 148f, 22f), "STALE - reconnecting");
-                }
             }
             else
             {
                 GUI.Box(frameRect, "No camera frame");
             }
-
-            GUI.Label(
-                new Rect(panel.x + 10f, panel.y + 268f, panelWidth - 20f, 20f),
-                status);
-            GUI.Label(
-                new Rect(panel.x + 10f, panel.y + 288f, panelWidth - 20f, 20f),
-                realVision != null ? realVision.GetReceiverStatus() : "YOLO receiver unavailable");
-            GUI.Label(
-                new Rect(panel.x + 10f, panel.y + 308f, panelWidth - 20f, 20f),
-                GetGeometryStatus());
-            GUI.Label(
-                new Rect(panel.x + 10f, panel.y + 328f, panelWidth - 20f, 20f),
-                GetHorizontalStatus());
-        }
-
-        private string GetGeometryStatus()
-        {
-            if (realVision == null ||
-                !realVision.TryGetFreshPacket(out YoloDataPacket packet) ||
-                packet.sees <= 0.5f)
-            {
-                return "BBox area/aspect: --";
-            }
-
-            return $"BBox area: {packet.bbox_area_ratio:P1} | aspect: {packet.bbox_aspect_ratio:F2}";
-        }
-
-        private string GetHorizontalStatus()
-        {
-            if (realVision == null)
-            {
-                return "Horizontal angle (norm): --";
-            }
-
-            var targetInfo = realVision.GetTargetInfo();
-            if (!targetInfo.visible)
-            {
-                return "Horizontal angle (norm): --";
-            }
-
-            string direction = targetInfo.angle < -0.05f
-                ? "left"
-                : targetInfo.angle > 0.05f
-                    ? "right"
-                    : "center";
-            return $"Horizontal angle (norm): {targetInfo.angle:+0.00;-0.00;0.00} ({direction})";
         }
 
         private void DrawYoloOverlay(Rect frameRect)
