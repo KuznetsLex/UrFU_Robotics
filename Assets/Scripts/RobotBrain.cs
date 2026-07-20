@@ -254,14 +254,16 @@ public class RobotBrain : Agent
     [Tooltip("Минимальное расстояние между роботом и мячом при рандомизации (чтобы не спавниться друг на друге)")]
     public float minSpawnDistance = 2f;
 
-    [Tooltip("Флаг, указывающий, что сейчас идёт обучение (включайте в инспекторе для тренировки)")]
+    [Tooltip("Master switch for camera, robot spawn and ball spawn randomization.")]
     public bool isTraining = true;
 
     // ==================== ПРИВАТНЫЕ ПОЛЯ ====================
     private Rigidbody rb;
     private Vector3 startPos;
+    private Vector3 initialStartPos;
     private Quaternion startRot;
     private Vector3 ballStartPos;
+    private Vector3 initialBallStartPos;
     private Quaternion ballStartRot;
     private Transform ballStartParent;
     private Rigidbody ballRb;
@@ -304,6 +306,7 @@ public class RobotBrain : Agent
     public override void Initialize()
     {
         startPos = rb.position;
+        initialStartPos = startPos;
         startRot = rb.rotation;
 
         if (!IsLoadedSceneObject(ball))
@@ -315,6 +318,7 @@ public class RobotBrain : Agent
         if (ball != null)
         {
             ballStartPos = ball.position;
+            initialBallStartPos = ballStartPos;
             ballStartRot = ball.rotation;
             ballStartParent = ball.parent;
             ballRb = ball.GetComponent<Rigidbody>();
@@ -374,18 +378,25 @@ public class RobotBrain : Agent
 
     public override void OnEpisodeBegin()
     {
-        if (isTraining && !useRealRobotIo)
+        if (!useRealRobotIo)
         {
-            yoloCamera?.RandomizeDomainParameters();
+            if (isTraining)
+                yoloCamera?.RandomizeDomainParameters();
+            else
+                yoloCamera?.ResetDomainParameters();
         }
 
+        startPos = initialStartPos;
+        if (ball != null)
+            ballStartPos = initialBallStartPos;
+
         // ----- Рандомизация стартовых позиций (если включено) -----
-        if (randomizeSpawn)
+        if (isTraining && randomizeSpawn)
         {
             startPos = GetRandomPosition(startPos.y);
         }
 
-        if (randomizeBall && ball != null)
+        if (isTraining && randomizeBall && ball != null)
         {
             Vector3 newBallPos;
             int attempts = 0;

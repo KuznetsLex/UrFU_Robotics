@@ -11,9 +11,17 @@ public class SimulatedYoloCamera : MonoBehaviour
     [Min(0.1f)] public float cameraAspectRatio = 4f / 3f;
 
     [Header("Domain randomization")]
+    [InspectorName("Randomize FOV And Vertical Tilt")]
+    [Tooltip("Randomize horizontal FOV and vertical camera tilt together.")]
     public bool randomizeHorizontalFOV = true;
     [Tooltip("Horizontal FOV range sampled once at the start of each training episode.")]
     public Vector2 horizontalFOVRange = new Vector2(35f, 55f);
+    [Tooltip("Vertical camera tilt range in degrees, sampled with the FOV.")]
+    public Vector2 verticalTiltRange = new Vector2(-5f, 5f);
+
+    private bool baseParametersCaptured;
+    private float baseHorizontalFOV;
+    private Quaternion baseLocalRotation;
 
     [Header("References")]
     public Transform targetBall;
@@ -21,14 +29,53 @@ public class SimulatedYoloCamera : MonoBehaviour
 
     public virtual void RandomizeDomainParameters()
     {
+        CaptureBaseParameters();
+
         if (!randomizeHorizontalFOV)
+        {
+            ResetDomainParameters();
+            return;
+        }
+
+        float minimumFov = Mathf.Clamp(
+            Mathf.Min(horizontalFOVRange.x, horizontalFOVRange.y),
+            1f,
+            179f);
+        float maximumFov = Mathf.Clamp(
+            Mathf.Max(horizontalFOVRange.x, horizontalFOVRange.y),
+            minimumFov,
+            179f);
+        horizontalFOV = UnityEngine.Random.Range(minimumFov, maximumFov);
+
+        float minimumTilt = Mathf.Clamp(
+            Mathf.Min(verticalTiltRange.x, verticalTiltRange.y),
+            -89f,
+            89f);
+        float maximumTilt = Mathf.Clamp(
+            Mathf.Max(verticalTiltRange.x, verticalTiltRange.y),
+            minimumTilt,
+            89f);
+        float verticalTilt = UnityEngine.Random.Range(minimumTilt, maximumTilt);
+        transform.localRotation = baseLocalRotation * Quaternion.Euler(verticalTilt, 0f, 0f);
+    }
+
+    public virtual void ResetDomainParameters()
+    {
+        CaptureBaseParameters();
+        horizontalFOV = baseHorizontalFOV;
+        transform.localRotation = baseLocalRotation;
+    }
+
+    private void CaptureBaseParameters()
+    {
+        if (baseParametersCaptured)
         {
             return;
         }
 
-        float minimum = Mathf.Clamp(Mathf.Min(horizontalFOVRange.x, horizontalFOVRange.y), 1f, 179f);
-        float maximum = Mathf.Clamp(Mathf.Max(horizontalFOVRange.x, horizontalFOVRange.y), minimum, 179f);
-        horizontalFOV = UnityEngine.Random.Range(minimum, maximum);
+        baseHorizontalFOV = horizontalFOV;
+        baseLocalRotation = transform.localRotation;
+        baseParametersCaptured = true;
     }
 
     public virtual (float angle, float areaRatio, float aspectRatio, bool visible) GetTargetInfo()
