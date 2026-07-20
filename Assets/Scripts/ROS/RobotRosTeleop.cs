@@ -301,12 +301,12 @@ namespace Team11.Ros
             float displayUltrasonicMeters = 0f;
             bool displayLeftIr = false;
             bool displayRightIr = false;
-            bool displayCenterIr = false;
+            bool displayGripperIr = false;
             bool hasDisplayData = robotBrain != null && robotBrain.TryGetSelectedRangeSensors(
                 out displayUltrasonicMeters,
                 out displayLeftIr,
                 out displayRightIr,
-                out displayCenterIr);
+                out displayGripperIr);
 
             GUI.Box(panel, $"Sensors — {dataSource}");
             bool requestedRealSensors = GUI.Toggle(
@@ -322,7 +322,7 @@ namespace Team11.Ros
                     out displayUltrasonicMeters,
                     out displayLeftIr,
                     out displayRightIr,
-                    out displayCenterIr);
+                    out displayGripperIr);
             }
 
             GUI.Label(new Rect(panel.x + 12, panel.y + 44, width - 24, 20),
@@ -336,7 +336,7 @@ namespace Team11.Ros
             string sensorState = hasDisplayData
                 ? $"Ultrasonic: {displayUltrasonicMeters:F2} m  |  " +
                   $"raw IR L:{(displayLeftIr ? 1 : 0)} " +
-                  $"R:{(displayRightIr ? 1 : 0)} C:{(displayCenterIr ? 1 : 0)}"
+                  $"R:{(displayRightIr ? 1 : 0)} G:{(displayGripperIr ? 1 : 0)}"
                 : $"{dataSource} sensors: no fresh data";
             GUI.Label(new Rect(panel.x + 12, panel.y + 106, width - 24, 20), sensorState);
 
@@ -360,9 +360,9 @@ namespace Team11.Ros
                 displayRightIr);
             DrawIrIndicator(
                 new Rect(indicatorsX + (indicatorWidth + indicatorGap) * 2f, panel.y + 146, indicatorWidth, 28),
-                "IR center",
+                "IR grip",
                 hasDisplayData,
-                displayCenterIr);
+                displayGripperIr);
 
             (float angle, float areaRatio, float aspectRatio, bool visible) vision =
                 (0f, 0f, 0f, false);

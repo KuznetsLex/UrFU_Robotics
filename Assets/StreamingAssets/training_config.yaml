@@ -7,7 +7,7 @@
 #
 # Формат: секция — имя класса компонента, ключ — точное имя его публичного
 # поля (как в инспекторе, но без пробелов, camelCase). Поддерживаются числа
-# (float/int), true/false, строки и пары вида [x, y] для Vector2.
+# (float/int), true/false, строки и пары вида [x, y] для Vector2/Vector2Int.
 #
 # Всё ниже закомментировано — файл сейчас ничего не переопределяет, значения
 # из инспектора действуют как обычно. Раскомментируйте и поправьте нужные
@@ -20,13 +20,16 @@
 #   wallPenalty: -0.01
 #   moveRewardScale: 0.01
 #   fallDistance: 3
+#   arenaEscapeMargin: 2
 #   noDetectionSteps: 1000
-#   noDetectionPenalty: -0.2
 #   grabAttemptReward: 0.1
 #   grabZoneRadius: 1
 #   smoothnessPenaltyScale: 0.002
-#   angleRewardScale: 0.005
-#   wallUltrasonicMultiplier: 0.5
+#   cameraRewardScale: 0.02
+#   cameraAngleDeadZone: 0.05
+#   cameraRewardClamp: 0.02
+#   wallProximityPenalty: 0
+#   collisionPenaltyCooldown: 0.5
 #   failedGrabPenalty: -0.1
 #   speedPenaltyThresholdLinear: 0.2
 #   speedPenaltyThresholdAngular: 30
@@ -66,7 +69,9 @@
 #   pwmScale: 200
 
 # VirtualSensors:
-#   irDistance: 1.5
+#   # Левый и правый ИК: 2.4 единицы = 24 см.
+#   irDistance: 2.4
+#   # Центральный ИК физически перенесён на захват.
 #   gripperDistance: 0.7
 #   ultrasonicMaxDistance: 50
 #   ultrasonicRayCount: 10
@@ -79,3 +84,7 @@
 #   randomizeHorizontalFOV: true
 #   horizontalFOVRange: [35, 55]
 #   verticalTiltRange: [-5, 5]
+#   randomizeSensorEffects: true
+#   angleNoiseStdDevRange: [0, 0.03]
+#   detectionDropoutRange: [0, 0.1]
+#   latencyMeasurementsRange: [0, 2]

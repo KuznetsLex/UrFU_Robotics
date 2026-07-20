@@ -38,6 +38,10 @@ public class EnvironmentManager : MonoBehaviour
 
     private void Awake()
     {
+        // Параметры должны быть применены до первой генерации арены и до
+        // дополнения obstacleMask обязательным слоем препятствий.
+        TrainingConfig.ApplyOverrides(this, "EnvironmentManager");
+
         obstacleLayer = LayerMask.NameToLayer(ObstacleLayerName);
         if (obstacleLayer < 0)
         {
@@ -47,13 +51,6 @@ public class EnvironmentManager : MonoBehaviour
 
         // Проверка свободного места должна учитывать уже созданные стены и коробки.
         obstacleMask |= 1 << obstacleLayer;
-    }
-
-    void Awake()
-    {
-        // До первого GenerateArena() — иначе стены/пол уже построятся со
-        // старыми значениями globalScale/baseArenaSize/boxCount и т.д.
-        TrainingConfig.ApplyOverrides(this, "EnvironmentManager");
     }
 
     void Update()

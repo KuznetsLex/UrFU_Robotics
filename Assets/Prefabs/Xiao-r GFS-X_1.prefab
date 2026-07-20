@@ -2065,7 +2065,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 10
+    VectorObservationSize: 13
     NumStackedVectorObservations: 4
     m_ActionSpec:
       m_NumContinuousActions: 2
@@ -2100,7 +2100,7 @@ MonoBehaviour:
   centerIRPoint: {fileID: 6790526778889995847}
   gripperIRPoint: {fileID: 1745436148338146802}
   ultrasonicPoint: {fileID: 1644698515509608797}
-  irDistance: 1.5
+  irDistance: 2.4
   gripperDistance: 0.7
   ultrasonicMaxDistance: 50
   ultrasonicRayCount: 10

@@ -4,12 +4,15 @@ public class VirtualSensors : MonoBehaviour
 {
     public Transform leftIRPoint;
     public Transform rightIRPoint;
+    [Tooltip("Legacy reference kept for existing scenes. The third IR channel now uses Gripper IR Point.")]
     public Transform centerIRPoint;
     public Transform gripperIRPoint;
     public Transform ultrasonicPoint;
 
-    public float irDistance = 0.15f;
-    public float gripperDistance = 0.07f;
+    [Tooltip("Дальность левого и правого ИК-датчиков: 2.4 = 24 см при масштабе сцены 1 unit = 1 дм.")]
+    [Min(0f)] public float irDistance = 2.4f;
+    [Tooltip("Дальность центрального ИК-датчика, перенесённого на захват.")]
+    [Min(0f)] public float gripperDistance = 0.7f;
     public float ultrasonicMaxDistance = 50f;
     public int ultrasonicRayCount = 10;
     public float ultrasonicAngle = 45f;
@@ -29,7 +32,7 @@ public class VirtualSensors : MonoBehaviour
 
     public float GetLeftIR() => CastRay(leftIRPoint, irDistance) ? 1f : 0f;
     public float GetRightIR() => CastRay(rightIRPoint, irDistance) ? 1f : 0f;
-    public float GetCenterIR() => CastRay(centerIRPoint, irDistance) ? 1f : 0f;
+    public float GetCenterIR() => GetGripperIR();
     public float GetGripperIR() => CastRay(gripperIRPoint, gripperDistance) ? 1f : 0f;
 
     /// <summary>
@@ -69,16 +72,16 @@ public class VirtualSensors : MonoBehaviour
         out float ultrasonicMeters,
         out bool leftIrTriggered,
         out bool rightIrTriggered,
-        out bool centerIrTriggered)
+        out bool gripperMountedIrTriggered)
     {
         bool hasSensorPoints = ultrasonicPoint != null ||
             leftIRPoint != null ||
             rightIRPoint != null ||
-            centerIRPoint != null;
+            gripperIRPoint != null;
 
         ultrasonicMeters = GetUltrasonicMinDistance();
         leftIrTriggered = CastRay(leftIRPoint, irDistance);
-        centerIrTriggered = CastRay(centerIRPoint, irDistance);
+        gripperMountedIrTriggered = CastRay(gripperIRPoint, gripperDistance);
         rightIrTriggered = CastRay(rightIRPoint, irDistance);
         return hasSensorPoints;
     }
@@ -95,7 +98,6 @@ public class VirtualSensors : MonoBehaviour
     {
         DrawGizmosRay(leftIRPoint, irDistance);
         DrawGizmosRay(rightIRPoint, irDistance);
-        DrawGizmosRay(centerIRPoint, irDistance);
         DrawGizmosRay(gripperIRPoint, gripperDistance);
         DrawGizmosUltrasonic(ultrasonicPoint, ultrasonicMaxDistance);
     }
@@ -152,7 +154,6 @@ public class VirtualSensors : MonoBehaviour
 
         DrawDebugRay(leftIRPoint, irDistance);
         DrawDebugRay(rightIRPoint, irDistance);
-        DrawDebugRay(centerIRPoint, irDistance);
         DrawDebugRay(gripperIRPoint, gripperDistance);
         DrawDebugUltrasonic(ultrasonicPoint, ultrasonicMaxDistance);
     }

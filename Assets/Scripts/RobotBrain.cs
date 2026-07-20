@@ -574,7 +574,7 @@ public class RobotBrain : Agent
         out float ultrasonicMeters,
         out bool leftIrTriggered,
         out bool rightIrTriggered,
-        out bool centerIrTriggered)
+        out bool gripperMountedIrTriggered)
     {
         if (!useRealRobotIo)
         {
@@ -584,7 +584,7 @@ public class RobotBrain : Agent
                     out ultrasonicMeters,
                     out leftIrTriggered,
                     out rightIrTriggered,
-                    out centerIrTriggered);
+                    out gripperMountedIrTriggered);
             }
         }
         else
@@ -600,14 +600,14 @@ public class RobotBrain : Agent
                     out ultrasonicMeters,
                     out leftIrTriggered,
                     out rightIrTriggered,
-                    out centerIrTriggered);
+                    out gripperMountedIrTriggered);
             }
         }
 
         ultrasonicMeters = 0f;
         leftIrTriggered = false;
         rightIrTriggered = false;
-        centerIrTriggered = false;
+        gripperMountedIrTriggered = false;
         return false;
     }
 
@@ -653,18 +653,12 @@ public class RobotBrain : Agent
             out float ultrasonicMeters,
             out bool leftIr,
             out bool rightIr,
-            out bool _);
+            out bool gripperMountedIr);
 
         sensor.AddObservation(ultrasonicMeters);
         sensor.AddObservation(leftIr ? 1f : 0f);
         sensor.AddObservation(rightIr ? 1f : 0f);
-
-        float gripperIrValue = 0f;
-        if (sensors != null)
-        {
-            gripperIrValue = sensors.GetGripperIR(); // 0 или 1
-        }
-        sensor.AddObservation(gripperIrValue);
+        sensor.AddObservation(gripperMountedIr ? 1f : 0f);
 
         // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость)
         SimulatedYoloCamera selectedVision = GetSelectedVisionSource();

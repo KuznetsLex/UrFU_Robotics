@@ -19,7 +19,7 @@ using UnityEngine;
 //     boxCount: 10
 //     baseArenaSize: [3, 6]
 //
-// Поддерживаются float/int/bool/string/Vector2. Если файла нет или в нём нет
+// Поддерживаются float/int/bool/string/Vector2/Vector2Int. Если файла нет или в нём нет
 // нужной секции/ключа — поле остаётся тем, что задано в инспекторе (файл
 // полностью опционален и покрывает только то, что реально хотите переопределить).
 public static class TrainingConfig
@@ -158,6 +158,16 @@ public static class TrainingConfig
                     return new Vector2(
                         float.Parse(parts[0], CultureInfo.InvariantCulture),
                         float.Parse(parts[1], CultureInfo.InvariantCulture));
+                }
+            }
+            if (fieldType == typeof(Vector2Int))
+            {
+                string[] parts = raw.Trim('[', ']', ' ').Split(',');
+                if (parts.Length == 2)
+                {
+                    return new Vector2Int(
+                        int.Parse(parts[0], CultureInfo.InvariantCulture),
+                        int.Parse(parts[1], CultureInfo.InvariantCulture));
                 }
             }
         }
