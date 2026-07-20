@@ -52,6 +52,9 @@ namespace Team11.Ros
         private volatile bool receiverRunning;
         private YoloDataPacket latestPacket;
         private float lastPacketTime = -1f;
+        private ulong measurementVersion;
+
+        public override ulong MeasurementVersion => measurementVersion;
 
         public bool HasFreshPacket =>
             lastPacketTime >= 0f && Time.unscaledTime - lastPacketTime <= packetTimeoutSeconds;
@@ -92,11 +95,16 @@ namespace Team11.Ros
             {
                 if (!HasFreshPacket && useYOLO)
                 {
+                    bool targetWasVisible = seesBall;
                     seesBall = false;
                     normalizedAngle = 0f;
                     bboxAreaRatio = 0f;
                     bboxAspectRatio = 0f;
                     receiverStatus = "YOLO packets timed out";
+                    if (targetWasVisible)
+                    {
+                        measurementVersion++;
+                    }
                 }
                 return;
             }
@@ -120,6 +128,7 @@ namespace Team11.Ros
 
             latestPacket = packet;
             lastPacketTime = Time.unscaledTime;
+            measurementVersion++;
             useYOLO = true;
             seesBall = packet.sees > 0.5f;
             confidence = Mathf.Clamp01(packet.conf);
