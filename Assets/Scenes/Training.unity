@@ -349,7 +349,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: wallPenalty
-      value: 0
+      value: -0.01
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: fallDistance
@@ -519,7 +519,7 @@ MonoBehaviour:
   scatterMargin: 0.5
   obstacleMask:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 257
   createWalls: 1
   visibleWalls: 1
   baseWallHeight: 0.5

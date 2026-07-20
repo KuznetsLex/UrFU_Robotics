@@ -4,6 +4,8 @@ using UnityEngine.InputSystem;
 
 public class EnvironmentManager : MonoBehaviour
 {
+    private const string ObstacleLayerName = "Obstacle";
+
     [Header("Связи с объектами")]
     public Transform robot;
     public Transform targetBall;
@@ -32,6 +34,20 @@ public class EnvironmentManager : MonoBehaviour
     private List<GameObject> activeBoxes = new List<GameObject>();
     private List<Vector3> pathSegments = new List<Vector3>();
     private GameObject wallsContainer;    // Контейнер для сгенерированных стен
+    private int obstacleLayer = -1;
+
+    private void Awake()
+    {
+        obstacleLayer = LayerMask.NameToLayer(ObstacleLayerName);
+        if (obstacleLayer < 0)
+        {
+            Debug.LogError($"EnvironmentManager: слой {ObstacleLayerName} не настроен в TagManager.", this);
+            return;
+        }
+
+        // Проверка свободного места должна учитывать уже созданные стены и коробки.
+        obstacleMask |= 1 << obstacleLayer;
+    }
 
     void Update()
     {
@@ -117,6 +133,7 @@ public class EnvironmentManager : MonoBehaviour
         wall.transform.localPosition = localPos;
         wall.transform.localRotation = Quaternion.identity;
         wall.transform.localScale = scale;
+        MarkAsObstacle(wall);
 
         // Если не хотим видеть стены, удаляем компонент отрисовки, оставляя только коллайдер
         if (!visibleWalls)
@@ -271,8 +288,9 @@ public class EnvironmentManager : MonoBehaviour
                 Vector3 boxCenter = testPos + Vector3.up * (localScale.y / 2f);
                 Quaternion blockRot = Quaternion.LookRotation(dir) * Quaternion.Euler(0, 90f, 0);
 
-                GameObject newBox = Instantiate(boxPrefab, boxCenter, blockRot);
+                GameObject newBox = Instantiate(boxPrefab, boxCenter, blockRot, transform);
                 newBox.transform.localScale = localScale;
+                MarkAsObstacle(newBox);
 
                 if (newBox.TryGetComponent<Rigidbody>(out Rigidbody rb))
                 {
@@ -344,8 +362,9 @@ public class EnvironmentManager : MonoBehaviour
 
                 if (Physics.CheckBox(boxCenter, checkExtents, randomRot, obstacleMask)) continue;
 
-                GameObject newBox = Instantiate(boxPrefab, boxCenter, randomRot);
+                GameObject newBox = Instantiate(boxPrefab, boxCenter, randomRot, transform);
                 newBox.transform.localScale = localScale;
+                MarkAsObstacle(newBox);
 
                 if (newBox.TryGetComponent<Rigidbody>(out Rigidbody rb))
                 {
@@ -372,6 +391,23 @@ public class EnvironmentManager : MonoBehaviour
             if (dist < requiredDist) return false;
         }
         return true;
+    }
+
+    private void MarkAsObstacle(GameObject obstacle)
+    {
+        if (obstacle == null || obstacleLayer < 0)
+            return;
+
+        obstacle.layer = obstacleLayer;
+        foreach (Transform child in obstacle.transform)
+            SetLayerRecursively(child, obstacleLayer);
+    }
+
+    private static void SetLayerRecursively(Transform target, int layer)
+    {
+        target.gameObject.layer = layer;
+        foreach (Transform child in target)
+            SetLayerRecursively(child, layer);
     }
 
     private float DistanceToSegment(Vector3 point, Vector3 v, Vector3 w)

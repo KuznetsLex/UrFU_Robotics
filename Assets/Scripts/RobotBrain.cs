@@ -185,8 +185,18 @@ public class RobotBrain : Agent
 
     // ==================== ОСНОВНЫЕ НАГРАДЫ И ШТРАФЫ ====================
     [Header("Основные награды и штрафы")]
-    [Tooltip("Штраф при столкновении со стеной (умножается на множители для разных датчиков)")]
+    [Tooltip("Штраф за подтверждённый физическим движком контакт с препятствием")]
     public float wallPenalty = -0f;
+
+    [Tooltip("Небольшой отдельный штраф за приближение к препятствию по ультразвуку. 0 отключает shaping близости.")]
+    public float wallProximityPenalty = 0f;
+
+    [Header("Регистрация столкновений")]
+    [Tooltip("Слои объектов, контакт с которыми считается столкновением с препятствием")]
+    public LayerMask collisionObstacleMask = 1 << 8;
+
+    [Tooltip("Минимальный интервал между штрафами при продолжительном контакте с одним или несколькими препятствиями")]
+    [Min(0f)] public float collisionPenaltyCooldown = 0.5f;
 
     [Tooltip("Множитель награды за сокращение дистанции до мяча (за каждый метр приближения)")]
     public float moveRewardScale = 0.01f;
@@ -230,9 +240,6 @@ public class RobotBrain : Agent
 
     [Tooltip("Штраф при превышении лимита шагов без детекции")]
     public float noDetectionPenalty = -0.2f;
-
-    [Tooltip("Множитель штрафа за ультразвуковой датчик (применяется к wallPenalty)")]
-    public float wallUltrasonicMultiplier = 0.5f;
 
     [Tooltip("Штраф за неудачную попытку захвата (клешня закрыта или мяч вне зоны)")]
     public float failedGrabPenalty = -0.1f;
@@ -297,6 +304,8 @@ public class RobotBrain : Agent
     private RobotRosTeleop robotSensorReceiver;
     private RealVision realVision;
     private SimulationRobotCommandSink simulationCommandSink;
+    private int pendingCollisionPenalties;
+    private float nextCollisionPenaltyTime;
 
     // ==================== МЕТОДЫ ЖИЗНЕННОГО ЦИКЛА ====================
 
@@ -306,6 +315,8 @@ public class RobotBrain : Agent
         rb = GetComponent<Rigidbody>();
         if (trackController == null) trackController = GetComponent<TrackController>();
         if (sensors == null) sensors = GetComponent<VirtualSensors>();
+        if (collisionObstacleMask == 0)
+            collisionObstacleMask = LayerMask.GetMask("Obstacle");
         simulationCommandSink = new SimulationRobotCommandSink(
             trackController,
             gripperTransform?.GetComponent<GripperController>());
@@ -429,6 +440,8 @@ public class RobotBrain : Agent
         rewardCountDict.Clear();
         episodeStepCounter = 0;
         statsSent = false;
+        pendingCollisionPenalties = 0;
+        nextCollisionPenaltyTime = Time.fixedTime;
 
         // Открываем клешню
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
@@ -679,6 +692,14 @@ public class RobotBrain : Agent
         // 1. Штраф за каждый шаг
         AddRewardWithStats("StepPenalty", stepPenalty);
 
+        // Контакты приходят из физического шага, поэтому применяем накопленные события
+        // здесь, чтобы награды и статистика оставались синхронизированы с шагом агента.
+        while (pendingCollisionPenalties > 0)
+        {
+            AddRewardWithStats("ObstacleCollision", wallPenalty);
+            pendingCollisionPenalties--;
+        }
+
         // 2. Штраф за резкие изменения управления (используем предыдущие значения)
         float gasDelta = Mathf.Abs(clampedGas - prevGas);
         float steerDelta = Mathf.Abs(clampedSteer - prevSteer);
@@ -723,14 +744,15 @@ public class RobotBrain : Agent
             lastDistanceToBall = currentDistance;
         }
 
-        // 6. Штрафы за близость к стенам (ультразвук)
-        if (TryGetSelectedRangeSensors(
+        // 6. Отдельный shaping-штраф за близость к стенам (ультразвук)
+        if (!Mathf.Approximately(wallProximityPenalty, 0f) &&
+            TryGetSelectedRangeSensors(
                 out float rewardUltrasonicMeters,
                 out _,
                 out _,
                 out _) &&
             rewardUltrasonicMeters < 0.5f)
-            AddRewardWithStats("WallUltrasonic", wallPenalty * wallUltrasonicMultiplier);
+            AddRewardWithStats("WallProximity", wallProximityPenalty);
 
         // 7. Штраф за высокую скорость в зоне захвата
         // Проверяем, находимся ли в зоне захвата (используем расстояние от holdPoint до мяча)
@@ -799,6 +821,32 @@ public class RobotBrain : Agent
             SendStatsToTensorBoard();
             EndEpisode();
         }
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        RegisterObstacleContact(collision);
+    }
+
+    private void OnCollisionStay(Collision collision)
+    {
+        RegisterObstacleContact(collision);
+    }
+
+    private void RegisterObstacleContact(Collision collision)
+    {
+        if (useRealRobotIo || collision == null || collision.collider == null)
+            return;
+
+        int otherLayerBit = 1 << collision.collider.gameObject.layer;
+        if ((collisionObstacleMask.value & otherLayerBit) == 0)
+            return;
+
+        if (Time.fixedTime < nextCollisionPenaltyTime)
+            return;
+
+        pendingCollisionPenalties++;
+        nextCollisionPenaltyTime = Time.fixedTime + collisionPenaltyCooldown;
     }
 
     // ==================== ЭВРИСТИЧЕСКИЙ РЕЖИМ ====================
