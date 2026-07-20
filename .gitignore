@@ -12,6 +12,9 @@
 #
 .vscode/
 .utmp/
+/tools/yolo/.venv/
+__pycache__/
+*.py[cod]
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/
@@ -118,3 +121,9 @@ InitTestScene*.unity*
 *.onnx.meta
 /[Aa]ssets/ML-Agents/Timers
 /[Aa]ssets/ML-Agents/Timers.meta
+
+# YOLO weights are local artifacts. Keep only the expected directory layout.
+/data/**
+!/data/onnx_vino/
+!/data/onnx_vino/onnx26/
+!/data/onnx_vino/onnx26/.gitkeep
