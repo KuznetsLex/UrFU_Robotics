@@ -269,7 +269,7 @@ MonoBehaviour:
   - {fileID: 443588116}
   - {fileID: 555000112}
   floorMargin: 1.2
-  arenaCount: 1
+  arenaCount: 20
   spacing: 100
   arenasPerRow: 4
 --- !u!4 &1069484985
@@ -492,7 +492,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6991420772225542318, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_BehaviorType
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6991420772225542318, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_BrainParameters.VectorObservationSize
