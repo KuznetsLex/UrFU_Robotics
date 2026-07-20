@@ -42,13 +42,27 @@ namespace Team11.Ros
         [SerializeField, Range(ClawMinAngle, ClawMaxAngle)]
         private float clawAngle = 50f;
 
+        [SerializeField, Range(ClawMinAngle, ClawMaxAngle)]
+        private float clawOpenAngle = 50f;
+
+        [SerializeField, Range(ClawMinAngle, ClawMaxAngle)]
+        private float clawClosedAngle = 105f;
+
         [SerializeField, Range(CameraMinAngle, CameraMaxAngle)]
         private float cameraAngle = 90f;
 
         private ROSConnection ros;
         private string status = "Set target angles in the Inspector, then press Apply to robot";
+        private bool hasCommandedClawState = true;
+        private bool commandedClawOpen = true;
 
         public string Status => status;
+
+        public bool TryGetCommandedClawState(out bool isOpen)
+        {
+            isOpen = commandedClawOpen;
+            return hasCommandedClawState;
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -75,6 +89,8 @@ namespace Team11.Ros
             elbowAngle = 90f;
             clawAngle = 50f;
             cameraAngle = 90f;
+            commandedClawOpen = true;
+            hasCommandedClawState = true;
             status = "Home targets loaded; press Apply to robot to move";
         }
 
@@ -86,6 +102,10 @@ namespace Team11.Ros
                 status = "ROS connection is unavailable";
                 return;
             }
+
+            commandedClawOpen = Mathf.Abs(clawAngle - clawOpenAngle) <=
+                Mathf.Abs(clawAngle - clawClosedAngle);
+            hasCommandedClawState = true;
 
             var positionsRadians = new double[]
             {
@@ -113,6 +133,19 @@ namespace Team11.Ros
             {
                 status = $"Send failed: {exception.Message}";
             }
+        }
+
+        public void ApplyGripperCommand(RobotGripperCommand command)
+        {
+            if (command == RobotGripperCommand.None)
+            {
+                return;
+            }
+
+            commandedClawOpen = command == RobotGripperCommand.Release;
+            hasCommandedClawState = true;
+            clawAngle = commandedClawOpen ? clawOpenAngle : clawClosedAngle;
+            PublishTargetAngles();
         }
     }
 }

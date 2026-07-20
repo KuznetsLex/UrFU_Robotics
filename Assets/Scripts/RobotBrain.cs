@@ -3,8 +3,135 @@ using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 using System.Collections.Generic;
 using Team11.Ros;
+
+public enum RobotGripperCommand
+{
+    None = 0,
+    Grab = 1,
+    Release = 2
+}
+
+public enum RobotGripAttemptResult
+{
+    None,
+    Succeeded,
+    Failed
+}
+
+/// <summary>
+/// Backend-independent robot command. Linear and angular values are normalized
+/// to [-1, 1]; positive angular means a right turn in the policy coordinate system.
+/// </summary>
+public readonly struct RobotCommand
+{
+    public RobotCommand(float linear, float angular, RobotGripperCommand gripper)
+    {
+        Linear = Mathf.Clamp(linear, -1f, 1f);
+        Angular = Mathf.Clamp(angular, -1f, 1f);
+        Gripper = gripper;
+    }
+
+    public float Linear { get; }
+    public float Angular { get; }
+    public RobotGripperCommand Gripper { get; }
+
+    public static RobotCommand Stopped => new RobotCommand(0f, 0f, RobotGripperCommand.None);
+}
+
+public readonly struct RobotCommandResult
+{
+    public RobotCommandResult(
+        bool hasGripperState,
+        bool isGripperOpen,
+        bool isGrabbing,
+        RobotGripAttemptResult gripAttempt)
+    {
+        HasGripperState = hasGripperState;
+        IsGripperOpen = isGripperOpen;
+        IsGrabbing = isGrabbing;
+        GripAttempt = gripAttempt;
+    }
+
+    public bool HasGripperState { get; }
+    public bool IsGripperOpen { get; }
+    public bool IsGrabbing { get; }
+    public RobotGripAttemptResult GripAttempt { get; }
+
+    public static RobotCommandResult Unavailable =>
+        new RobotCommandResult(false, false, false, RobotGripAttemptResult.None);
+}
+
+public interface IRobotCommandSink
+{
+    RobotCommandResult ApplyCommand(RobotCommand command);
+    void Stop();
+    bool TryGetGripperState(out bool isOpen);
+}
+
+public sealed class SimulationRobotCommandSink : IRobotCommandSink
+{
+    private readonly TrackController trackController;
+    private readonly GripperController gripperController;
+
+    public SimulationRobotCommandSink(
+        TrackController trackController,
+        GripperController gripperController)
+    {
+        this.trackController = trackController;
+        this.gripperController = gripperController;
+    }
+
+    public RobotCommandResult ApplyCommand(RobotCommand command)
+    {
+        if (trackController != null)
+        {
+            trackController.Move(
+                command.Linear * trackController.maxLinearCmd,
+                command.Angular);
+        }
+
+        RobotGripAttemptResult gripAttempt = RobotGripAttemptResult.None;
+        if (gripperController != null)
+        {
+            if (command.Gripper == RobotGripperCommand.Grab)
+            {
+                if (!gripperController.IsGrabbing)
+                {
+                    gripAttempt = gripperController.IsOpen && gripperController.Grab()
+                        ? RobotGripAttemptResult.Succeeded
+                        : RobotGripAttemptResult.Failed;
+                }
+            }
+            else if (command.Gripper == RobotGripperCommand.Release &&
+                     !gripperController.IsOpen)
+            {
+                gripperController.Release();
+            }
+        }
+
+        return gripperController != null
+            ? new RobotCommandResult(
+                true,
+                gripperController.IsOpen,
+                gripperController.IsGrabbing,
+                gripAttempt)
+            : RobotCommandResult.Unavailable;
+    }
+
+    public void Stop()
+    {
+        trackController?.Stop();
+    }
+
+    public bool TryGetGripperState(out bool isOpen)
+    {
+        isOpen = gripperController != null && gripperController.IsOpen;
+        return gripperController != null;
+    }
+}
 
 /// <summary>
 /// Мозг робота для обучения с подкреплением (ML-Agents).
@@ -22,14 +149,30 @@ public class RobotBrain : Agent
     public Transform holdPoint;
     public Transform ball;
 
-    [Header("Inference input source")]
-    [Tooltip("Use physical robot sensors and YOLO packets instead of simulated sensors.")]
-    [SerializeField] private bool useRealRobotSensors;
+    [Header("Inference I/O source")]
+    [Tooltip("Use the physical robot for both policy observations and policy commands.")]
+    [FormerlySerializedAs("useRealRobotSensors")]
+    [SerializeField] private bool useRealRobotIo;
+
+    public bool UseRealRobotIo
+    {
+        get => useRealRobotIo;
+        set
+        {
+            if (useRealRobotIo == value)
+            {
+                return;
+            }
+
+            GetSelectedCommandSink()?.Stop();
+            useRealRobotIo = value;
+        }
+    }
 
     public bool UseRealRobotSensors
     {
-        get => useRealRobotSensors;
-        set => useRealRobotSensors = value;
+        get => UseRealRobotIo;
+        set => UseRealRobotIo = value;
     }
 
     // ==================== ОСНОВНЫЕ НАГРАДЫ И ШТРАФЫ ====================
@@ -143,6 +286,7 @@ public class RobotBrain : Agent
     private bool statsSent;
     private RobotRosTeleop robotSensorReceiver;
     private RealVision realVision;
+    private SimulationRobotCommandSink simulationCommandSink;
 
     // ==================== МЕТОДЫ ЖИЗНЕННОГО ЦИКЛА ====================
 
@@ -152,6 +296,9 @@ public class RobotBrain : Agent
         rb = GetComponent<Rigidbody>();
         if (trackController == null) trackController = GetComponent<TrackController>();
         if (sensors == null) sensors = GetComponent<VirtualSensors>();
+        simulationCommandSink = new SimulationRobotCommandSink(
+            trackController,
+            gripperTransform?.GetComponent<GripperController>());
     }
 
     public override void Initialize()
@@ -188,6 +335,33 @@ public class RobotBrain : Agent
         return target != null && target.gameObject.scene.IsValid() && target.gameObject.scene.isLoaded;
     }
 
+    private IRobotCommandSink GetSelectedCommandSink()
+    {
+        if (!useRealRobotIo)
+        {
+            return simulationCommandSink;
+        }
+
+        if (robotSensorReceiver == null)
+        {
+            robotSensorReceiver = FindAnyObjectByType<RobotRosTeleop>();
+        }
+
+        return robotSensorReceiver;
+    }
+
+    private bool TryGetSelectedGripperState(out bool isOpen)
+    {
+        IRobotCommandSink commandSink = GetSelectedCommandSink();
+        if (commandSink != null)
+        {
+            return commandSink.TryGetGripperState(out isOpen);
+        }
+
+        isOpen = false;
+        return false;
+    }
+
     /// <summary>
     /// Генерирует случайную позицию в пределах арены на заданной высоте Y.
     /// </summary>
@@ -200,7 +374,7 @@ public class RobotBrain : Agent
 
     public override void OnEpisodeBegin()
     {
-        if (isTraining && !useRealRobotSensors)
+        if (isTraining && !useRealRobotIo)
         {
             yoloCamera?.RandomizeDomainParameters();
         }
@@ -231,11 +405,13 @@ public class RobotBrain : Agent
 
         // Открываем клешню
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
-        if (gripper != null)
+        if (!useRealRobotIo && gripper != null)
             gripper.Release();
 
         // Останавливаем движение
-        trackController?.Stop();
+        simulationCommandSink?.Stop();
+        if (useRealRobotIo)
+            GetSelectedCommandSink()?.Stop();
 
         // Устанавливаем робота в начальную позицию
         rb.position = startPos;
@@ -290,7 +466,7 @@ public class RobotBrain : Agent
         out bool rightIrTriggered,
         out bool centerIrTriggered)
     {
-        if (!useRealRobotSensors)
+        if (!useRealRobotIo)
         {
             if (sensors != null)
             {
@@ -329,7 +505,7 @@ public class RobotBrain : Agent
         out (float angle, float areaRatio, float aspectRatio, bool visible) targetInfo)
     {
         SimulatedYoloCamera selectedVision = yoloCamera;
-        if (useRealRobotSensors)
+        if (useRealRobotIo)
         {
             if (realVision == null)
             {
@@ -383,8 +559,8 @@ public class RobotBrain : Agent
         sensor.AddObservation(targetInfo.visible ? 1f : 0f);
 
         // 3. Состояние клешни (открыта/закрыта)
-        GripperController gripper = gripperTransform?.GetComponent<GripperController>();
-        sensor.AddObservation(gripper != null && gripper.IsOpen ? 1f : 0f);
+        TryGetSelectedGripperState(out bool isGripperOpen);
+        sensor.AddObservation(isGripperOpen ? 1f : 0f);
 
         // 4. Доля шагов без обнаружения цели
         sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / noDetectionSteps));
@@ -409,20 +585,27 @@ public class RobotBrain : Agent
         else
             stepsSinceLastDetection = 0;
 
-        if (trackController == null)
-            return;
-
         // Извлечение действий
         float gas = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
         float steer = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
-        int gripCommand = actions.DiscreteActions[0];
+        RobotGripperCommand gripCommand = (RobotGripperCommand)Mathf.Clamp(
+            actions.DiscreteActions[0],
+            (int)RobotGripperCommand.None,
+            (int)RobotGripperCommand.Release);
 
         // Применяем клиппинг газа с учётом maxLinearCmd (как в TrackController)
-        float clampedGas = Mathf.Clamp(gas, -trackController.maxLinearCmd, trackController.maxLinearCmd);
+        float maxLinearCommand = trackController != null
+            ? Mathf.Max(0f, trackController.maxLinearCmd)
+            : 0f;
+        float clampedGas = Mathf.Clamp(gas, -maxLinearCommand, maxLinearCommand);
         float clampedSteer = Mathf.Clamp(steer, -1f, 1f);
 
-        // Передаём команды в драйвер гусениц
-        trackController.Move(clampedGas, clampedSteer);
+        float normalizedLinear = maxLinearCommand > Mathf.Epsilon
+            ? clampedGas / maxLinearCommand
+            : 0f;
+        var robotCommand = new RobotCommand(normalizedLinear, clampedSteer, gripCommand);
+        RobotCommandResult commandResult = GetSelectedCommandSink()?.ApplyCommand(robotCommand)
+            ?? RobotCommandResult.Unavailable;
 
         // ---------- НАГРАДЫ И ШТРАФЫ (каждый шаг) ----------
 
@@ -503,47 +686,21 @@ public class RobotBrain : Agent
             }
         }
 
-        // ---------- ОБРАБОТКА КОМАНД КЛЕШНИ ----------
-
-        if (gripper != null)
+        // Результат попытки захвата доступен только у backend с обратной связью.
+        if (commandResult.GripAttempt == RobotGripAttemptResult.Failed)
         {
-            if (gripCommand == 1) // Захват
-            {
-                if (gripper.IsGrabbing)
-                {
-                    // Уже держит мяч – ничего не делаем
-                }
-                else if (gripper.IsOpen)
-                {
-                    bool success = gripper.Grab();
-                    if (!success)
-                    {
-                        AddRewardWithStats("FailedGrab", failedGrabPenalty);
-                    }
-                }
-                else // Клешня закрыта (и не держит мяч)
-                {
-                    AddRewardWithStats("FailedGrab", failedGrabPenalty);
-                }
-            }
-            else if (gripCommand == 2) // Отпускание
-            {
-                if (!gripper.IsOpen)
-                {
-                    gripper.Release();
-                }
-            }
+            AddRewardWithStats("FailedGrab", failedGrabPenalty);
         }
 
         // ---------- СОХРАНЯЕМ ТЕКУЩИЕ ДЕЙСТВИЯ КАК ПРЕДЫДУЩИЕ ДЛЯ СЛЕДУЮЩЕГО ШАГА ----------
         prevGas = clampedGas;
         prevSteer = clampedSteer;
-        previousGripCommand = gripCommand;
+        previousGripCommand = (int)gripCommand;
 
         // ---------- ПРОВЕРКИ ЗАВЕРШЕНИЯ ЭПИЗОДА ----------
 
         // 7. Успешный захват мяча – главная положительная цель
-        if (gripper != null && gripper.IsGrabbing)
+        if (!useRealRobotIo && commandResult.IsGrabbing)
         {
             hasBall = true;
             AddRewardWithStats("GripReward", gripReward);

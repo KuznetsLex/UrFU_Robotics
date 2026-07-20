@@ -104,7 +104,7 @@ namespace Team11.Ros
         {
             while (enabled)
             {
-                if (!UsesRealRobotSensors())
+                if (!UsesRealRobotIo())
                 {
                     StopMjpegStream();
                     yield return new WaitForSecondsRealtime(RefreshIntervalSeconds);
@@ -274,7 +274,7 @@ namespace Team11.Ros
 
         private void LateUpdate()
         {
-            if (UsesRealRobotSensors() || !EnsureSimulatedCameraPreview())
+            if (UsesRealRobotIo() || !EnsureSimulatedCameraPreview())
             {
                 return;
             }
@@ -290,14 +290,14 @@ namespace Team11.Ros
             simulatedCamera.Render();
         }
 
-        private bool UsesRealRobotSensors()
+        private bool UsesRealRobotIo()
         {
             if (robotBrain == null)
             {
                 robotBrain = FindAnyObjectByType<RobotBrain>();
             }
 
-            return robotBrain != null && robotBrain.UseRealRobotSensors;
+            return robotBrain != null && robotBrain.UseRealRobotIo;
         }
 
         private bool EnsureSimulatedCameraPreview()
@@ -378,7 +378,7 @@ namespace Team11.Ros
             const float panelWidth = 280f;
             const float panelHeight = 229f;
             var panel = new Rect(10f, 42f, panelWidth, panelHeight);
-            bool useRealCamera = UsesRealRobotSensors();
+            bool useRealCamera = UsesRealRobotIo();
             GUI.Box(panel, useRealCamera ? "Robot camera" : "Virtual camera");
 
             var frameRect = new Rect(panel.x + 10f, panel.y + 24f, frameWidth, frameHeight);

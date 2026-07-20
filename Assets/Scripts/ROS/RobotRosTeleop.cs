@@ -11,7 +11,7 @@ namespace Team11.Ros
     /// when Play Mode starts, so no scene or prefab changes are required.
     /// </summary>
     [DefaultExecutionOrder(-1000)]
-    public sealed class RobotRosTeleop : MonoBehaviour
+    public sealed class RobotRosTeleop : MonoBehaviour, IRobotCommandSink
     {
         private const string RobotIpAddress = "192.168.2.158";
         private const int RobotTcpPort = 10001;
@@ -21,6 +21,7 @@ namespace Team11.Ros
         private const float LinearSpeedMetersPerSecond = 0.15f;
         private const float AngularSpeedRadiansPerSecond = 0.8f;
         private const float PublishRateHz = 20f;
+        private const float CommandTimeoutSeconds = 0.5f;
         private const float SensorTimeoutSeconds = 1f;
 
         private ROSConnection ros;
@@ -34,6 +35,11 @@ namespace Team11.Ros
         private float lastSensorMessageTime = -1f;
         private RobotBrain robotBrain;
         private bool wasPublishingRealCommands;
+        private RobotCommand latestCommand = RobotCommand.Stopped;
+        private bool hasFreshCommand;
+        private float lastCommandTime = -1f;
+        private RobotGripperCommand lastGripperCommand = RobotGripperCommand.None;
+        private RobotRosServoControl servoControl;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -70,14 +76,16 @@ namespace Team11.Ros
 
         private void Update()
         {
-            bool useRealRobot = UsesRealRobotSensors();
+            bool useRealRobot = UsesRealRobotIo();
             if (!useRealRobot)
             {
                 if (wasPublishingRealCommands)
                 {
-                    PublishStop();
+                    PublishStopNow();
                     wasPublishingRealCommands = false;
                 }
+                hasFreshCommand = false;
+                lastGripperCommand = RobotGripperCommand.None;
                 return;
             }
 
@@ -89,7 +97,7 @@ namespace Team11.Ros
                 if (keyboard.spaceKey.wasPressedThisFrame)
                 {
                     emergencyStop = true;
-                    PublishStop();
+                    PublishStopNow();
                 }
 
                 if (keyboard.enterKey.wasPressedThisFrame)
@@ -105,45 +113,75 @@ namespace Team11.Ros
 
             nextPublishTime = Time.unscaledTime + (1f / PublishRateHz);
 
-            if (!applicationHasFocus || emergencyStop || keyboard == null)
+            bool commandIsFresh = hasFreshCommand &&
+                Time.unscaledTime - lastCommandTime <= CommandTimeoutSeconds;
+            if (!applicationHasFocus || emergencyStop || !commandIsFresh)
             {
-                PublishStop();
+                PublishStopNow();
                 return;
             }
 
-            double linear = ReadLinearInput(keyboard) * LinearSpeedMetersPerSecond;
-            double angular = ReadAngularInput(keyboard) * AngularSpeedRadiansPerSecond;
+            double linear = latestCommand.Linear * LinearSpeedMetersPerSecond;
+            double angular = -latestCommand.Angular * AngularSpeedRadiansPerSecond;
             PublishCommand(linear, angular);
         }
 
-        private static float ReadLinearInput(Keyboard keyboard)
+        public RobotCommandResult ApplyCommand(RobotCommand command)
         {
-            if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed)
+            latestCommand = command;
+            hasFreshCommand = true;
+            lastCommandTime = Time.unscaledTime;
+
+            if (!emergencyStop && applicationHasFocus &&
+                command.Gripper != lastGripperCommand)
             {
-                return 1f;
+                if (command.Gripper != RobotGripperCommand.None)
+                {
+                    ResolveServoControl()?.ApplyGripperCommand(command.Gripper);
+                }
+
+                lastGripperCommand = command.Gripper;
             }
 
-            if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed)
-            {
-                return -1f;
-            }
-
-            return 0f;
+            bool hasGripperState = TryGetGripperState(out bool isGripperOpen);
+            return new RobotCommandResult(
+                hasGripperState,
+                isGripperOpen,
+                false,
+                RobotGripAttemptResult.None);
         }
 
-        private static float ReadAngularInput(Keyboard keyboard)
+        public void Stop()
         {
-            if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed)
+            latestCommand = RobotCommand.Stopped;
+            hasFreshCommand = false;
+            lastGripperCommand = RobotGripperCommand.None;
+            if (wasPublishingRealCommands)
             {
-                return 1f;
+                PublishStopNow();
+            }
+        }
+
+        public bool TryGetGripperState(out bool isOpen)
+        {
+            RobotRosServoControl control = ResolveServoControl();
+            if (control != null)
+            {
+                return control.TryGetCommandedClawState(out isOpen);
             }
 
-            if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed)
+            isOpen = false;
+            return false;
+        }
+
+        private RobotRosServoControl ResolveServoControl()
+        {
+            if (servoControl == null)
             {
-                return -1f;
+                servoControl = FindAnyObjectByType<RobotRosServoControl>();
             }
 
-            return 0f;
+            return servoControl;
         }
 
         private void PublishCommand(double linear, double angular)
@@ -166,7 +204,7 @@ namespace Team11.Ros
             ros.Publish(CommandTopic, command);
         }
 
-        private void PublishStop()
+        private void PublishStopNow()
         {
             PublishCommand(0d, 0d);
         }
@@ -202,7 +240,7 @@ namespace Team11.Ros
 
             if (!hasFocus && wasPublishingRealCommands)
             {
-                PublishStop();
+                PublishStopNow();
             }
         }
 
@@ -210,7 +248,7 @@ namespace Team11.Ros
         {
             if (wasPublishingRealCommands)
             {
-                PublishStop();
+                PublishStopNow();
             }
         }
 
@@ -218,18 +256,18 @@ namespace Team11.Ros
         {
             if (wasPublishingRealCommands)
             {
-                PublishStop();
+                PublishStopNow();
             }
         }
 
-        private bool UsesRealRobotSensors()
+        private bool UsesRealRobotIo()
         {
             if (robotBrain == null)
             {
                 robotBrain = FindAnyObjectByType<RobotBrain>();
             }
 
-            return robotBrain != null && robotBrain.UseRealRobotSensors;
+            return robotBrain != null && robotBrain.UseRealRobotIo;
         }
 
         private void OnGUI()
@@ -243,7 +281,7 @@ namespace Team11.Ros
                 robotBrain = FindAnyObjectByType<RobotBrain>();
             }
 
-            bool useRealSensors = robotBrain != null && robotBrain.UseRealRobotSensors;
+            bool useRealSensors = robotBrain != null && robotBrain.UseRealRobotIo;
             string dataSource = useRealSensors ? "REAL ROBOT" : "SIMULATION";
             float displayUltrasonicMeters = 0f;
             bool displayLeftIr = false;
@@ -259,10 +297,10 @@ namespace Team11.Ros
             bool requestedRealSensors = GUI.Toggle(
                 new Rect(panel.x + 12, panel.y + 22, width - 24, 20),
                 useRealSensors,
-                "Use real robot sensors for inference");
+                "Use real robot I/O for inference");
             if (robotBrain != null && requestedRealSensors != useRealSensors)
             {
-                robotBrain.UseRealRobotSensors = requestedRealSensors;
+                robotBrain.UseRealRobotIo = requestedRealSensors;
                 useRealSensors = requestedRealSensors;
                 dataSource = useRealSensors ? "REAL ROBOT" : "SIMULATION";
                 hasDisplayData = robotBrain.TryGetSelectedRangeSensors(
@@ -275,7 +313,7 @@ namespace Team11.Ros
             GUI.Label(new Rect(panel.x + 12, panel.y + 44, width - 24, 20),
                 $"{RobotIpAddress}:{RobotTcpPort}  |  topic: {CommandTopic}");
             GUI.Label(new Rect(panel.x + 12, panel.y + 64, width - 24, 20),
-                "WASD/arrows: drive   Space: E-STOP   Enter: reset E-STOP");
+                "Heuristic: WASD/arrows   Space: E-STOP   Enter: reset E-STOP");
 
             string state = emergencyStop ? "E-STOP ACTIVE" : "ready";
             GUI.Label(new Rect(panel.x + 12, panel.y + 84, width - 24, 20), $"State: {state}");

@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 public class GripperController : MonoBehaviour
 {
@@ -186,15 +185,6 @@ public class GripperController : MonoBehaviour
             Gizmos.color = Color.green;
             Gizmos.DrawWireSphere(holdPoint.position, grabRadius);
         }
-    }
-
-    void Update()
-    {
-        var keyboard = Keyboard.current;
-        if (keyboard == null) return;
-
-        if (keyboard.gKey.wasPressedThisFrame) Grab();
-        if (keyboard.rKey.wasPressedThisFrame) Release();
     }
 
     // ========== СВОЙСТВА ДЛЯ ВНЕШНЕГО ДОСТУПА ==========
