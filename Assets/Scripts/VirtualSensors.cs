@@ -14,6 +14,9 @@ public class VirtualSensors : MonoBehaviour
     public int ultrasonicRayCount = 10;
     public float ultrasonicAngle = 45f;
     public LayerMask obstacleLayer;
+    [Header("Ultrasonic Cone Settings")]
+    public int ultrasonicVerticalLayers = 6;        // количество слоёв (вееров)
+    public float ultrasonicVerticalAngle = 0f;    // угол поворота вееров внутри конуса (градусы)
 
     private void Awake()
     {
@@ -40,22 +43,51 @@ public class VirtualSensors : MonoBehaviour
     private float GetUltrasonicMinDistance()
     {
         if (ultrasonicPoint == null) return ultrasonicMaxDistance;
+
         Vector3 origin = ultrasonicPoint.position;
         Vector3 forward = ultrasonicPoint.forward;
         Vector3 up = ultrasonicPoint.up;
-        float halfAngle = ultrasonicAngle * 0.5f;
-        int count = ultrasonicRayCount;
+        Vector3 right = ultrasonicPoint.right;
+
+        int raysPerFan = ultrasonicRayCount;                // количество лучей в одном веере
+        int fanRotations = ultrasonicVerticalLayers;        // количество положений веера при вращении
+        float horizontalHalfAngle = ultrasonicAngle * 0.5f; // половинный горизонтальный угол веера
+        float elevationAngle = ultrasonicVerticalAngle * 0.5f; // угол наклона веера вверх
+
         float minDist = ultrasonicMaxDistance;
-        for (int i = 0; i < count; i++)
+
+        // Цикл по вращениям веера вокруг оси forward
+        for (int r = 0; r < fanRotations; r++)
         {
-            float t = (count > 1) ? (2f * i / (count - 1) - 1f) : 0f;
-            float angle = halfAngle * t;
-            Quaternion rot = Quaternion.AngleAxis(angle, up);
-            Vector3 dir = rot * forward;
-            if (Physics.Raycast(origin, dir, out RaycastHit hit, ultrasonicMaxDistance, obstacleLayer))
+            // Азимутальный угол (0..360) для текущего положения веера
+            float azimuth = (r / (float)fanRotations) * 360f;
+            Quaternion azimuthRot = Quaternion.AngleAxis(azimuth, forward);
+
+            // Цикл по лучам внутри веера
+            for (int i = 0; i < raysPerFan; i++)
             {
-                if (hit.distance < minDist)
-                    minDist = hit.distance;
+                // Горизонтальный угол в пределах веера (от -halfAngle до +halfAngle)
+                float t = (raysPerFan > 1) ? (2f * i / (raysPerFan - 1) - 1f) : 0f;
+                float hAngle = horizontalHalfAngle * t;
+
+                // Строим направление:
+                // 1. Сначала наклоняем веер вверх (вокруг оси right) на угол elevationAngle
+                Quaternion tiltRot = Quaternion.AngleAxis(elevationAngle, right);
+                Vector3 tiltedForward = tiltRot * forward;
+
+                // 2. Затем разворачиваем горизонтально (вокруг оси up) на hAngle
+                Quaternion fanRot = Quaternion.AngleAxis(hAngle, up);
+                Vector3 fanDirection = fanRot * tiltedForward;
+
+                // 3. Теперь поворачиваем весь веер вокруг оси forward на азимут
+                Vector3 direction = azimuthRot * fanDirection;
+
+                // Пускаем луч
+                if (Physics.Raycast(origin, direction, out RaycastHit hit, ultrasonicMaxDistance, obstacleLayer))
+                {
+                    if (hit.distance < minDist)
+                        minDist = hit.distance;
+                }
             }
         }
         return minDist;
@@ -114,24 +146,41 @@ public class VirtualSensors : MonoBehaviour
     private void DrawGizmosUltrasonic(Transform point, float maxDistance)
     {
         if (point == null) return;
+
         Vector3 origin = point.position;
         Vector3 forward = point.forward;
         Vector3 up = point.up;
-        float halfAngle = ultrasonicAngle * 0.5f;
-        int count = ultrasonicRayCount;
-        for (int i = 0; i < count; i++)
+        Vector3 right = point.right;
+
+        int raysPerFan = ultrasonicRayCount;
+        int fanRotations = ultrasonicVerticalLayers;
+        float horizontalHalfAngle = ultrasonicAngle * 0.5f;
+        float elevationAngle = ultrasonicVerticalAngle * 0.5f;
+
+        for (int r = 0; r < fanRotations; r++)
         {
-            float t = (count > 1) ? (2f * i / (count - 1) - 1f) : 0f;
-            float angle = halfAngle * t;
-            Quaternion rot = Quaternion.AngleAxis(angle, up);
-            Vector3 dir = rot * forward;
-            bool isHit = Physics.Raycast(origin, dir, out RaycastHit hit, maxDistance, obstacleLayer);
-            Gizmos.color = isHit ? Color.red : Color.white;
-            Gizmos.DrawRay(origin, dir * maxDistance);
-            if (isHit)
+            float azimuth = (r / (float)fanRotations) * 360f;
+            Quaternion azimuthRot = Quaternion.AngleAxis(azimuth, forward);
+
+            for (int i = 0; i < raysPerFan; i++)
             {
-                Gizmos.color = Color.red;
-                Gizmos.DrawWireSphere(hit.point, 0.01f);
+                float t = (raysPerFan > 1) ? (2f * i / (raysPerFan - 1) - 1f) : 0f;
+                float hAngle = horizontalHalfAngle * t;
+
+                Quaternion tiltRot = Quaternion.AngleAxis(elevationAngle, right);
+                Vector3 tiltedForward = tiltRot * forward;
+                Quaternion fanRot = Quaternion.AngleAxis(hAngle, up);
+                Vector3 fanDirection = fanRot * tiltedForward;
+                Vector3 direction = azimuthRot * fanDirection;
+
+                bool isHit = Physics.Raycast(origin, direction, out RaycastHit hit, maxDistance, obstacleLayer);
+                Gizmos.color = isHit ? Color.red : Color.white;
+                Gizmos.DrawRay(origin, direction * maxDistance);
+                if (isHit)
+                {
+                    Gizmos.color = Color.red;
+                    Gizmos.DrawWireSphere(hit.point, 0.01f);
+                }
             }
         }
     }
@@ -158,20 +207,37 @@ public class VirtualSensors : MonoBehaviour
     private void DrawDebugUltrasonic(Transform point, float maxDistance)
     {
         if (point == null) return;
+
         Vector3 origin = point.position;
         Vector3 forward = point.forward;
         Vector3 up = point.up;
-        float halfAngle = ultrasonicAngle * 0.5f;
-        int count = ultrasonicRayCount;
-        for (int i = 0; i < count; i++)
+        Vector3 right = point.right;
+
+        int raysPerFan = ultrasonicRayCount;
+        int fanRotations = ultrasonicVerticalLayers;
+        float horizontalHalfAngle = ultrasonicAngle * 0.5f;
+        float elevationAngle = ultrasonicVerticalAngle * 0.5f;
+
+        for (int r = 0; r < fanRotations; r++)
         {
-            float t = (count > 1) ? (2f * i / (count - 1) - 1f) : 0f;
-            float angle = halfAngle * t;
-            Quaternion rot = Quaternion.AngleAxis(angle, up);
-            Vector3 dir = rot * forward;
-            bool isHit = Physics.Raycast(origin, dir, out RaycastHit hit, maxDistance, obstacleLayer);
-            Color rayColor = isHit ? Color.red : Color.white;
-            Debug.DrawRay(origin, dir * maxDistance, rayColor);
+            float azimuth = (r / (float)fanRotations) * 360f;
+            Quaternion azimuthRot = Quaternion.AngleAxis(azimuth, forward);
+
+            for (int i = 0; i < raysPerFan; i++)
+            {
+                float t = (raysPerFan > 1) ? (2f * i / (raysPerFan - 1) - 1f) : 0f;
+                float hAngle = horizontalHalfAngle * t;
+
+                Quaternion tiltRot = Quaternion.AngleAxis(elevationAngle, right);
+                Vector3 tiltedForward = tiltRot * forward;
+                Quaternion fanRot = Quaternion.AngleAxis(hAngle, up);
+                Vector3 fanDirection = fanRot * tiltedForward;
+                Vector3 direction = azimuthRot * fanDirection;
+
+                bool isHit = Physics.Raycast(origin, direction, out RaycastHit hit, maxDistance, obstacleLayer);
+                Color rayColor = isHit ? Color.red : Color.white;
+                Debug.DrawRay(origin, direction * maxDistance, rayColor);
+            }
         }
     }
 }
