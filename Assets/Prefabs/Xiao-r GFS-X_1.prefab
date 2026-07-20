@@ -1183,7 +1183,7 @@ MonoBehaviour:
   targetBall: {fileID: 0}
   obstacleLayer:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 256
 --- !u!1 &5996238617362467291
 GameObject:
   m_ObjectHideFlags: 0
@@ -2096,7 +2096,7 @@ MonoBehaviour:
   ultrasonicAngle: 45
   obstacleLayer:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 256
 --- !u!114 &5153601074894658457
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2120,6 +2120,11 @@ MonoBehaviour:
   holdPoint: {fileID: 4065118821553703660}
   ball: {fileID: 0}
   wallPenalty: -0.01
+  wallProximityPenalty: 0
+  collisionObstacleMask:
+    serializedVersion: 2
+    m_Bits: 256
+  collisionPenaltyCooldown: 0.5
   moveRewardScale: 0.01
   gripReward: 1
   outOfBoundsPenalty: -0.5

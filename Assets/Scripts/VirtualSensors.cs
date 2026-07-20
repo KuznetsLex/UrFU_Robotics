@@ -20,7 +20,7 @@ public class VirtualSensors : MonoBehaviour
     private void Awake()
     {
         if (obstacleLayer == 0)
-            obstacleLayer = LayerMask.GetMask("Default");
+            obstacleLayer = LayerMask.GetMask("Obstacle");
         robotBrain = GetComponent<RobotBrain>();
     }
 
