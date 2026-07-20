@@ -28,6 +28,14 @@ public class SimulatedYoloCamera : MonoBehaviour
     public Transform targetBall;
     public LayerMask obstacleLayer;
 
+    private void Awake()
+    {
+        // До CaptureBaseParameters() (вызывается позже, из RobotBrain.OnEpisodeBegin) —
+        // иначе за "базовое" значение для рандомизации/сброса возьмётся не то, что
+        // задано в конфиге, а старое значение из инспектора.
+        TrainingConfig.ApplyOverrides(this, "SimulatedYoloCamera");
+    }
+
     // Переиспользуемый буфер для RaycastNonAlloc — на RaycastAll здесь раньше
     // аллоцировался новый массив каждый вызов (каждое решение агента, на каждой
     // арене), это заметно нагружало GC при обучении с несколькими аренами.

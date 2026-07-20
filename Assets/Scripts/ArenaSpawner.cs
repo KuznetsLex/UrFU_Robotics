@@ -44,6 +44,10 @@ public class ArenaSpawner : MonoBehaviour
 
     void Awake()
     {
+        // До построения сетки — arenaCount/spacing/arenasPerRow/floorMargin должны
+        // быть переопределены раньше, чем мы решим, сколько арен и с каким шагом строить.
+        TrainingConfig.ApplyOverrides(this, "ArenaSpawner");
+
         if (arenaTemplate == null || arenaTemplate.Length == 0)
         {
             Debug.LogWarning("ArenaSpawner: шаблон арены не назначен, размножение пропущено.");
@@ -101,6 +105,13 @@ public class ArenaSpawner : MonoBehaviour
 
         if (env != null)
         {
+            // На случай, если EnvironmentManager.Awake() для этой конкретной арены
+            // ещё не отработал (Unity не гарантирует порядок Awake() между разными
+            // объектами сцены) — CreateFloor() ниже читает baseArenaSize/globalScale
+            // сразу и не должен получить старые (ещё не переопределённые) значения.
+            // Вызов идемпотентный, повторный проход из своего Awake() — не проблема.
+            TrainingConfig.ApplyOverrides(env, "EnvironmentManager");
+
             env.robot = brain.transform;
             env.targetBall = ball;
             brain.environmentManager = env;
