@@ -10,6 +10,7 @@ public sealed class SensorTestSceneSetup : MonoBehaviour
     private const float UltrasonicTestDistance = 6f;
 
     private VirtualSensors sensors;
+    private CameraRotator cameraRotator;
     private GameObject testObstacle;
     private int activeTest;
 
@@ -30,6 +31,9 @@ public sealed class SensorTestSceneSetup : MonoBehaviour
                 behavior.BehaviorType = BehaviorType.HeuristicOnly;
 
             sensors = brain.GetComponent<VirtualSensors>();
+            cameraRotator = brain.cameraRotator != null
+                ? brain.cameraRotator
+                : brain.GetComponentInChildren<CameraRotator>(true);
         }
 
         CreateFloor();
@@ -123,7 +127,7 @@ public sealed class SensorTestSceneSetup : MonoBehaviour
     private void OnGUI()
     {
         const float panelWidth = 420f;
-        Rect panel = new Rect(16f, 16f, panelWidth, 190f);
+        Rect panel = new Rect(16f, 16f, panelWidth, 215f);
         GUI.Box(panel, "Sensor test");
 
         GUI.Label(new Rect(30f, 45f, panelWidth - 28f, 22f),
@@ -147,6 +151,11 @@ public sealed class SensorTestSceneSetup : MonoBehaviour
             $"УЗ: {ultrasonicDistance:F2} ед. | боковые ИК: {sensors.irDistance:F2} ед. | захват: {sensors.gripperDistance:F2} ед.");
         GUI.Label(new Rect(30f, 145f, panelWidth - 28f, 22f),
             $"ИК: левый={AsSignal(leftIr)}  захват={AsSignal(gripperMountedIr)}  правый={AsSignal(rightIr)}");
+        string panState = cameraRotator != null
+            ? $"current={cameraRotator.CurrentAngle:F1} deg  target={cameraRotator.TargetAngle:F1} deg"
+            : "unavailable";
+        GUI.Label(new Rect(30f, 170f, panelWidth - 28f, 22f),
+            $"Camera/US pan: {panState} | Q/E move, C center");
     }
 
     private static string GetTestName(int test)

@@ -1,31 +1,112 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
+/// <summary>
+/// Controls the shared camera/ultrasonic pan pivot. The policy provides an
+/// absolute normalized target, while the simulated servo approaches it at a
+/// finite rate to match the physical actuator.
+/// </summary>
 public class CameraRotator : MonoBehaviour
 {
-    [Range(0f, 180f)]
-    public float angle = 90f; // ползунок в инспекторе
+    public const float CenterAngle = 90f;
+    public const float PanHalfRange = 70f;
+    public const float MinAngle = CenterAngle - PanHalfRange;
+    public const float MaxAngle = CenterAngle + PanHalfRange;
 
-    private float previousAngle = -1f;
+    [Header("Camera pan servo")]
+    [Tooltip("Absolute servo target in degrees. The safe physical range is 20..160 degrees.")]
+    [FormerlySerializedAs("angle")]
+    [SerializeField, Range(MinAngle, MaxAngle)]
+    private float targetAngle = CenterAngle;
 
-    void Update()
+    [Tooltip("Simulated actuator speed. 140 deg/s gives a one-second full safe sweep; calibrate against the real servo.")]
+    [SerializeField, Min(1f)]
+    private float maxSpeedDegreesPerSecond = 140f;
+
+    [Tooltip("Ignore smaller target changes so simulation matches ROS command deadband.")]
+    [SerializeField, Min(0f)]
+    private float commandDeadbandDegrees = 0.5f;
+
+    private float currentAngle = CenterAngle;
+
+    public float CurrentAngle => currentAngle;
+    public float TargetAngle => targetAngle;
+    public float CurrentNormalized => NormalizeAngle(currentAngle);
+    public float TargetNormalized => NormalizeAngle(targetAngle);
+
+    private void Awake()
     {
-        if (Mathf.Abs(angle - previousAngle) > 0.001f)
+        targetAngle = ClampAngle(targetAngle);
+        currentAngle = targetAngle;
+        ApplyRotation();
+    }
+
+    private void FixedUpdate()
+    {
+        float nextAngle = Mathf.MoveTowards(
+            currentAngle,
+            targetAngle,
+            maxSpeedDegreesPerSecond * Time.fixedDeltaTime);
+
+        if (Mathf.Approximately(nextAngle, currentAngle))
+            return;
+
+        currentAngle = nextAngle;
+        ApplyRotation();
+    }
+
+    private void OnValidate()
+    {
+        targetAngle = ClampAngle(targetAngle);
+        maxSpeedDegreesPerSecond = Mathf.Max(1f, maxSpeedDegreesPerSecond);
+        commandDeadbandDegrees = Mathf.Max(0f, commandDeadbandDegrees);
+
+        if (!Application.isPlaying)
         {
+            currentAngle = targetAngle;
             ApplyRotation();
-            previousAngle = angle;
         }
     }
 
-    // Применяет изменения даже в редакторе (без Play)
-    void OnValidate()
+    public void SetNormalizedTarget(float normalizedTarget)
     {
+        SetTargetAngle(DenormalizeAngle(normalizedTarget));
+    }
+
+    public void SetTargetAngle(float requestedAngle)
+    {
+        float safeTarget = ClampAngle(requestedAngle);
+        if (Mathf.Abs(safeTarget - targetAngle) < commandDeadbandDegrees)
+            return;
+
+        targetAngle = safeTarget;
+    }
+
+    public void ResetPan(float normalizedAngle)
+    {
+        float safeAngle = DenormalizeAngle(normalizedAngle);
+        targetAngle = safeAngle;
+        currentAngle = safeAngle;
         ApplyRotation();
-        previousAngle = angle;
+    }
+
+    public static float NormalizeAngle(float angleDegrees)
+    {
+        return Mathf.Clamp((ClampAngle(angleDegrees) - CenterAngle) / PanHalfRange, -1f, 1f);
+    }
+
+    public static float DenormalizeAngle(float normalizedAngle)
+    {
+        return CenterAngle + Mathf.Clamp(normalizedAngle, -1f, 1f) * PanHalfRange;
+    }
+
+    public static float ClampAngle(float angleDegrees)
+    {
+        return Mathf.Clamp(angleDegrees, MinAngle, MaxAngle);
     }
 
     private void ApplyRotation()
     {
-        // Вращаем вокруг локальной оси Z (влево-вправо, если модель смотрит вперёд по Z)
-        transform.localRotation = Quaternion.Euler(0f, angle, 0f);
+        transform.localRotation = Quaternion.Euler(0f, currentAngle, 0f);
     }
 }

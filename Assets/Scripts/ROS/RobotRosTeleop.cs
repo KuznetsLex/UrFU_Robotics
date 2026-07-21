@@ -147,14 +147,15 @@ namespace Team11.Ros
             hasFreshCommand = true;
             lastCommandTime = Time.unscaledTime;
 
-            if (!emergencyStop && applicationHasFocus &&
-                command.Gripper != lastGripperCommand)
+            if (!emergencyStop && applicationHasFocus)
             {
-                if (command.Gripper != RobotGripperCommand.None)
-                {
-                    ResolveServoControl()?.ApplyGripperCommand(command.Gripper);
-                }
-
+                RobotGripperCommand servoGripperCommand =
+                    command.Gripper != lastGripperCommand
+                        ? command.Gripper
+                        : RobotGripperCommand.None;
+                ResolveServoControl()?.ApplyPolicyCommand(
+                    command.CameraPanTarget,
+                    servoGripperCommand);
                 lastGripperCommand = command.Gripper;
             }
 
@@ -186,6 +187,18 @@ namespace Team11.Ros
             }
 
             isOpen = false;
+            return false;
+        }
+
+        public bool TryGetCameraPanState(out float normalizedAngle)
+        {
+            RobotRosServoControl control = ResolveServoControl();
+            if (control != null)
+            {
+                return control.TryGetCameraPanState(out normalizedAngle);
+            }
+
+            normalizedAngle = 0f;
             return false;
         }
 

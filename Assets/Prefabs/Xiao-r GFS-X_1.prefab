@@ -1610,7 +1610,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cc4890a209e472478328239e355071f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraRotator
-  angle: 90
+  targetAngle: 90
+  maxSpeedDegreesPerSecond: 140
+  commandDeadbandDegrees: 0.5
 --- !u!1 &7079266089091184592
 GameObject:
   m_ObjectHideFlags: 0
@@ -2195,10 +2197,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 13
+    VectorObservationSize: 15
     NumStackedVectorObservations: 4
     m_ActionSpec:
-      m_NumContinuousActions: 2
+      m_NumContinuousActions: 3
       BranchSizes: 03000000
     VectorActionSize: 
     VectorActionDescriptions: []
@@ -2260,6 +2262,7 @@ MonoBehaviour:
   trackController: {fileID: 6950360474486480390}
   sensors: {fileID: 936645688684954883}
   yoloCamera: {fileID: 8249311652206390590}
+  cameraRotator: {fileID: 9018670682039676966}
   gripperTransform: {fileID: 4896793876978805614}
   holdPoint: {fileID: 4065118821553703660}
   ball: {fileID: 0}
@@ -2285,6 +2288,7 @@ MonoBehaviour:
   cameraRewardScale: 0.02
   cameraAngleDeadZone: 0.05
   cameraRewardClamp: 0.02
+  randomizeCameraPanOnEpisodeBegin: 1
 --- !u!114 &1636716259720906956
 MonoBehaviour:
   m_ObjectHideFlags: 0
