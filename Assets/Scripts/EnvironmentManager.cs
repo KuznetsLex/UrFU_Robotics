@@ -29,12 +29,14 @@ public class EnvironmentManager : MonoBehaviour
     public bool createWalls = true;       // Создавать ли физические границы
     public bool visibleWalls = true;      // Оставить ли стены видимыми (MeshRenderer)
     public float baseWallHeight = 0.5f;   // Высота стен до масштабирования
+    public Color wallColor = Color.black; // Цвет стен — чтобы их было видно при виде сверху
 
     private readonly float[] baseBoxDimensions = { 0.14f, 0.26f, 0.36f };
     private List<GameObject> activeBoxes = new List<GameObject>();
     private List<Vector3> pathSegments = new List<Vector3>();
     private GameObject wallsContainer;    // Контейнер для сгенерированных стен
     private int obstacleLayer = -1;
+    private Material wallMaterial;        // Общий материал для всех стен (создаётся один раз)
 
     private void Awake()
     {
@@ -144,6 +146,20 @@ public class EnvironmentManager : MonoBehaviour
         {
             Destroy(wall.GetComponent<MeshRenderer>());
         }
+        else
+        {
+            wall.GetComponent<MeshRenderer>().sharedMaterial = GetWallMaterial();
+        }
+    }
+
+    private Material GetWallMaterial()
+    {
+        if (wallMaterial == null)
+        {
+            wallMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            wallMaterial.color = wallColor;
+        }
+        return wallMaterial;
     }
 
     private void RandomizeStartAndTarget()
