@@ -321,6 +321,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 828264942340100150, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 936645688684954883, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 936645688684954883, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: centerIRPoint
       value: 
@@ -344,6 +352,10 @@ PrefabInstance:
     - target: {fileID: 936645688684954883, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: ultrasonicVerticalLayers
       value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 1636716259720906956, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Enabled
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1644698515509608797, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalPosition.x
@@ -465,6 +477,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.x
       value: -90
       objectReference: {fileID: 0}
+    - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6742798089966889192, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0.01174
@@ -493,13 +509,49 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.x
       value: 90
       objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: turnK
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: dragCoeff
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: maxLinearCmd
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: frictionCoeff
+      value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: maxMotorForce
+      value: 300
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: angularDragCoeff
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: randomizeFriction
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6950360474486480390, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: frictionNoiseRange
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6991420772225542318, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_Enabled
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6991420772225542318, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_BrainParameters.m_ActionSpec.m_NumContinuousActions
-      value: 679
+      value: 679000
       objectReference: {fileID: 0}
     - target: {fileID: 7554272809906027335, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_Layer
@@ -517,8 +569,39 @@ PrefabInstance:
     m_RemovedGameObjects:
     - {fileID: 3854703021184353613, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 8420677910478226421, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      insertIndex: 3
+      addedObject: {fileID: 1210162166}
   m_SourcePrefab: {fileID: 100100000, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+--- !u!1 &1210162156 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8420677910478226421, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+  m_PrefabInstance: {fileID: 615988213}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1210162166
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1210162156}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3dfe431b9771d4e43b161b3e5ad059c5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TrackControllerPhysics
+  maxMotorForce: 100
+  maxSteerForce: 50
+  frictionCoeff: 0.8
+  dragCoeff: 0.5
+  angularDragCoeff: 1
+  randomizeFriction: 1
+  frictionNoiseRange: 0.2
+  rb: {fileID: 0}
+  currentGas: 0
+  currentSteer: 0
+  currentFrictionCoeff: 0
 --- !u!1001 &1971109216
 PrefabInstance:
   m_ObjectHideFlags: 0
