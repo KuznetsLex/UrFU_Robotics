@@ -456,6 +456,14 @@ public class RobotBrain : Agent
         // Сброс статистики
         rewardSumDict.Clear();
         rewardCountDict.Clear();
+        // Эти типы попадают в AddRewardWithStats только при наступлении события
+        // (захват зоны, успешный грип и т.п.), поэтому без заглушки эпизоды без такого
+        // события не попадали бы в Rewards/*Reward_Sum|_Count|_Avg вовсе.
+        foreach (string type in new[] { "CameraReward", "GrabZoneReward", "DistanceReward", "GripReward" })
+        {
+            rewardSumDict[type] = 0f;
+            rewardCountDict[type] = 0;
+        }
         episodeStepCounter = 0;
         statsSent = false;
         cameraScoreSum = 0f;
