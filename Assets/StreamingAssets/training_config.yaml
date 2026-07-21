@@ -5,77 +5,113 @@
 # headless-обучения (mlagents-learn --env=Build.exe). Читается один раз при
 # старте, до генерации первой арены.
 #
-# Формат: секция — имя класса компонента, ключ — точное имя его публичного
-# поля (как в инспекторе, но без пробелов, camelCase). Поддерживаются числа
-# (float/int), true/false, строки и пары вида [x, y] для Vector2.
+# Формат: секция — имя класса компонента (без отступа), ключ — точное имя
+# его публичного поля, с отступом в 2 пробела (как в инспекторе, но без
+# пробелов, camelCase). Поддерживаются числа (float/int), true/false, строки
+# и пары вида [x, y] для Vector2.
 #
-# Всё ниже закомментировано — файл сейчас ничего не переопределяет, значения
-# из инспектора действуют как обычно. Раскомментируйте и поправьте нужные
-# строки (снимите "#" в начале строки).
+# Ниже уже прописаны все переопределяемые параметры со значениями,
+# соответствующими текущим настройкам в инспекторе, и разбиты на разделы —
+# так же, как в самом инспекторе. Ничего раскомментировать не нужно: просто
+# меняйте нужные числа перед запуском билда.
+#
+# Поля-ссылки на объекты сцены (Transform/GameObject/LayerMask и т.п., такие
+# как Robot/Target Ball/Box Prefab/Obstacle Mask) конфиг не поддерживает —
+# их можно назначить только в инспекторе.
 
-# RobotBrain:
-#   gripReward: 1.0
-#   outOfBoundsPenalty: -0.5
-#   stepPenalty: -0.0002
-#   wallPenalty: -0.01
-#   moveRewardScale: 0.01
-#   fallDistance: 3
-#   noDetectionSteps: 1000
-#   noDetectionPenalty: -0.2
-#   grabAttemptReward: 0.1
-#   grabZoneRadius: 1
-#   smoothnessPenaltyScale: 0.002
-#   angleRewardScale: 0.005
-#   wallUltrasonicMultiplier: 0.5
-#   failedGrabPenalty: -0.1
-#   speedPenaltyThresholdLinear: 0.2
-#   speedPenaltyThresholdAngular: 30
-#   speedPenaltyAmount: -0.05
-#   arenaHalfExtents: [300, 300]
-#   spawnHalfExtents: [15, 15]
-#   randomizeSpawn: true
-#   randomizeBall: true
-#   minSpawnDistance: 2
-#   isTraining: true
-#   regenerateEveryEpisodes: 10
+RobotBrain:
+  # --- Inference I/O source ---
+  regenerateEveryEpisodes: 10
 
-# EnvironmentManager:
-#   globalScale: 10
-#   baseArenaSize: [3, 6]
-#   boxCount: 10
-#   baseSafeRadius: 0.3
-#   scatterMargin: 0.5
-#   maxBallDistanceFromFarWall: 1.15
-#   createWalls: true
-#   visibleWalls: true
-#   baseWallHeight: 0.5
+  # --- Основные награды и штрафы ---
+  wallPenalty: -0.01
+  moveRewardScale: 0.01
+  gripReward: 1
+  outOfBoundsPenalty: -0.5
 
-# ArenaSpawner:
-#   arenaCount: 20
-#   spacing: 100
-#   arenasPerRow: 4
-#   floorMargin: 1.2
+  # --- Границы среды ---
+  arenaHalfExtents: [300, 300]
+  fallDistance: 3
 
-# TrackController:
-#   moveSpeed: 3
-#   turnSpeed: 120
-#   turnK: 0.3
-#   maxLinearCmd: 0.25
-#   motorDeadzone: 10
-#   minMotorPwm: 35
-#   pwmScale: 200
+  # --- Ограничения эпизода ---
+  noDetectionSteps: 1000
+  stepPenalty: -0.0002
+  grabAttemptReward: 0.1
 
-# VirtualSensors:
-#   irDistance: 1.5
-#   gripperDistance: 0.7
-#   ultrasonicMaxDistance: 50
-#   ultrasonicRayCount: 10
-#   ultrasonicAngle: 45
+  # --- Ready-to-Grab zone ---
+  grabZoneRadius: 1
 
-# SimulatedYoloCamera:
-#   maxVisibleDistance: 30
-#   horizontalFOV: 40
-#   cameraAspectRatio: 1.3333333
-#   randomizeHorizontalFOV: true
-#   horizontalFOVRange: [35, 55]
-#   verticalTiltRange: [-5, 5]
+  # --- Коэффициенты наград (дополнительные) ---
+  smoothnessPenaltyScale: 0.002
+  angleRewardScale: 0.005
+  noDetectionPenalty: -0.2
+  wallUltrasonicMultiplier: 0.5
+  failedGrabPenalty: -0.1
+
+  # --- Speed Penalty in Grab Zone ---
+  speedPenaltyThresholdLinear: 0.2
+  speedPenaltyThresholdAngular: 30
+  speedPenaltyAmount: -0.05
+
+  # --- Spawn Randomization ---
+  spawnHalfExtents: [15, 15]
+  randomizeSpawn: true
+  randomizeBall: true
+  minSpawnDistance: 2
+  isTraining: true
+
+EnvironmentManager:
+  # --- Масштабирование мира ---
+  globalScale: 10
+
+  # --- Базовые настройки арены ---
+  baseArenaSize: [3, 6]
+  boxCount: 10
+  baseSafeRadius: 0.3
+  scatterMargin: 0.5
+  maxBallDistanceFromFarWall: 1.15
+
+  # --- Настройки границ (Стены) ---
+  createWalls: true
+  visibleWalls: true
+  baseWallHeight: 0.5
+
+ArenaSpawner:
+  # --- Пол ---
+  floorMargin: 1.2
+
+  # --- Настройки размножения ---
+  arenaCount: 20
+  spacing: 100
+  arenasPerRow: 4
+
+TrackController:
+  # --- Motion ---
+  moveSpeed: 3
+  turnSpeed: 120
+  turnK: 0.3
+  maxLinearCmd: 0.25
+
+  # --- Motor PWM simulation ---
+  motorDeadzone: 10
+  minMotorPwm: 35
+  pwmScale: 200
+
+VirtualSensors:
+  # --- Датчики ---
+  irDistance: 1.5
+  gripperDistance: 0.7
+  ultrasonicMaxDistance: 50
+  ultrasonicRayCount: 10
+  ultrasonicAngle: 45
+
+SimulatedYoloCamera:
+  # --- Camera simulation ---
+  maxVisibleDistance: 30
+  horizontalFOV: 40
+  cameraAspectRatio: 1.3333333
+
+  # --- Domain randomization ---
+  randomizeHorizontalFOV: true
+  horizontalFOVRange: [35, 55]
+  verticalTiltRange: [-5, 5]
