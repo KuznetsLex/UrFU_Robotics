@@ -342,11 +342,14 @@ public class RobotBrain : Agent
     private float nextCollisionPenaltyTime;
     private bool hasGripperDebugSnapshot;
     private RobotGripperCommand lastDebugGripCommand;
+    private RobotGripperCommand lastDebugAppliedGripCommand;
     private RobotGripAttemptResult lastDebugGripAttempt;
     private bool lastDebugTargetInTrigger;
     private bool lastDebugGripperIr;
     private bool lastDebugIsOpen;
     private bool lastDebugIsGrabbing;
+    private RobotGripperCommand pendingHeuristicGripCommand;
+    private RobotGripperCommand lastAppliedGripCommand;
 
     // ==================== МЕТОДЫ ЖИЗНЕННОГО ЦИКЛА ====================
 
@@ -399,6 +402,20 @@ public class RobotBrain : Agent
         cameraMeasurementCount = 0;
         targetAcquiredCount = 0;
         targetLostCount = 0;
+    }
+
+    private void Update()
+    {
+        var keyboard = Keyboard.current;
+        if (keyboard == null)
+            return;
+
+        // Heuristic вызывается только на шагах принятия решения. Буфер сохраняет
+        // короткое нажатие до ближайшего решения агента.
+        if (keyboard.gKey.wasPressedThisFrame)
+            pendingHeuristicGripCommand = RobotGripperCommand.Grab;
+        else if (keyboard.rKey.wasPressedThisFrame)
+            pendingHeuristicGripCommand = RobotGripperCommand.Release;
     }
 
     private static bool IsLoadedSceneObject(Transform target)
@@ -582,6 +599,8 @@ public class RobotBrain : Agent
             : 0f;
         previousGripCommand = 0;
         hasGripperDebugSnapshot = false;
+        pendingHeuristicGripCommand = RobotGripperCommand.None;
+        lastAppliedGripCommand = RobotGripperCommand.None;
     }
 
     private void ResetBall()
@@ -763,9 +782,11 @@ public class RobotBrain : Agent
         sensor.AddObservation(effectiveVisible ? targetInfo.aspectRatio : lastKnownAspectRatio);
         sensor.AddObservation(effectiveVisible ? 1f : 0f);
 
-        // 3. Состояние клешни (открыта/закрыта)
-        TryGetSelectedGripperState(out bool isGripperOpen);
-        sensor.AddObservation(isGripperOpen ? 1f : 0f);
+        // 3. Состояние клешни: закрыта = +1, открыта = -1, неизвестно = 0.
+        bool hasGripperState = TryGetSelectedGripperState(out bool isGripperOpen);
+        sensor.AddObservation(hasGripperState
+            ? (isGripperOpen ? -1f : 1f)
+            : 0f);
 
         // 4. Доля шагов без обнаружения цели
         sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / Mathf.Max(1f, noDetectionSteps)));
@@ -774,8 +795,49 @@ public class RobotBrain : Agent
         // Газ и руль с учётом клиппинга
         sensor.AddObservation(prevGas);
         sensor.AddObservation(prevSteer);
-        // Команда клешни
-        sensor.AddObservation(previousGripCommand);
+        // Команда клешни: Grab/закрыть = +1, Release/открыть = -1, None = 0.
+        sensor.AddObservation(EncodeGripperCommandObservation(
+            (RobotGripperCommand)previousGripCommand));
+    }
+
+    private static float EncodeGripperCommandObservation(RobotGripperCommand command)
+    {
+        return command switch
+        {
+            RobotGripperCommand.Grab => 1f,
+            RobotGripperCommand.Release => -1f,
+            _ => 0f
+        };
+    }
+
+    public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
+    {
+        bool hasGripperState = TryGetSelectedGripperState(out bool isGripperOpen);
+        bool hasSensorData = TryGetSelectedRangeSensors(
+            out _,
+            out _,
+            out _,
+            out bool gripperIrTriggered);
+
+        GripperController simulationGripper = !useRealRobotIo
+            ? gripperTransform?.GetComponent<GripperController>()
+            : null;
+        bool targetInTrigger = simulationGripper != null &&
+            simulationGripper.HasTargetInTrigger;
+
+        bool canGrab = hasGripperState &&
+            isGripperOpen &&
+            ((hasSensorData && gripperIrTriggered) || targetInTrigger);
+        bool canRelease = hasGripperState && !isGripperOpen;
+
+        actionMask.SetActionEnabled(
+            branch: 0,
+            actionIndex: (int)RobotGripperCommand.Grab,
+            isEnabled: canGrab);
+        actionMask.SetActionEnabled(
+            branch: 0,
+            actionIndex: (int)RobotGripperCommand.Release,
+            isEnabled: canRelease);
     }
 
     // ==================== ПРИНЯТИЕ РЕШЕНИЙ ====================
@@ -797,6 +859,20 @@ public class RobotBrain : Agent
             actions.DiscreteActions[0],
             (int)RobotGripperCommand.None,
             (int)RobotGripperCommand.Release);
+
+        // DecisionRequester повторяет последнее действие между решениями. Команды
+        // сервопривода трактуем как события перехода, а не как команду на каждом
+        // физическом шаге — это совпадает с поведением реального ROS-драйвера.
+        RobotGripperCommand appliedGripCommand = RobotGripperCommand.None;
+        if (gripCommand == RobotGripperCommand.None)
+        {
+            lastAppliedGripCommand = RobotGripperCommand.None;
+        }
+        else if (gripCommand != lastAppliedGripCommand)
+        {
+            appliedGripCommand = gripCommand;
+            lastAppliedGripCommand = gripCommand;
+        }
 
         // Применяем клиппинг газа с учётом maxLinearCmd (как в TrackController)
         float maxLinearCommand = trackController != null
@@ -838,7 +914,7 @@ public class RobotBrain : Agent
             appliedSteer = delayedAction[1];
         }
 
-        var robotCommand = new RobotCommand(appliedLinear, appliedSteer, gripCommand);
+        var robotCommand = new RobotCommand(appliedLinear, appliedSteer, appliedGripCommand);
         RobotCommandResult commandResult = GetSelectedCommandSink()?.ApplyCommand(robotCommand)
             ?? RobotCommandResult.Unavailable;
 
@@ -846,6 +922,7 @@ public class RobotBrain : Agent
         {
             LogGripperInferenceState(
                 gripCommand,
+                appliedGripCommand,
                 commandResult,
                 gripperOpenBeforeCommand,
                 targetInTrigger,
@@ -1050,6 +1127,7 @@ public class RobotBrain : Agent
 
     private void LogGripperInferenceState(
         RobotGripperCommand gripCommand,
+        RobotGripperCommand appliedGripCommand,
         RobotCommandResult commandResult,
         bool gripperOpenBeforeCommand,
         bool targetInTrigger,
@@ -1060,6 +1138,7 @@ public class RobotBrain : Agent
 
         bool stateChanged = !hasGripperDebugSnapshot ||
             gripCommand != lastDebugGripCommand ||
+            appliedGripCommand != lastDebugAppliedGripCommand ||
             commandResult.GripAttempt != lastDebugGripAttempt ||
             targetInTrigger != lastDebugTargetInTrigger ||
             gripperIrTriggered != lastDebugGripperIr ||
@@ -1074,8 +1153,9 @@ public class RobotBrain : Agent
             : -1f;
 
         Debug.Log(
-            $"[GripInference] agent={name}#{GetInstanceID()} step={episodeStepCounter} " +
-            $"action={gripCommand} trigger={(targetInTrigger ? 1 : 0)} " +
+            $"[GripInference] agent={name}#{GetEntityId()} step={episodeStepCounter} " +
+            $"action={gripCommand} applied={appliedGripCommand} " +
+            $"trigger={(targetInTrigger ? 1 : 0)} " +
             $"ir={(gripperIrTriggered ? 1 : 0)} distance={distanceToBall:F3} " +
             $"openBefore={(gripperOpenBeforeCommand ? 1 : 0)} " +
             $"openAfter={(commandResult.IsGripperOpen ? 1 : 0)} " +
@@ -1085,6 +1165,7 @@ public class RobotBrain : Agent
 
         hasGripperDebugSnapshot = true;
         lastDebugGripCommand = gripCommand;
+        lastDebugAppliedGripCommand = appliedGripCommand;
         lastDebugGripAttempt = commandResult.GripAttempt;
         lastDebugTargetInTrigger = targetInTrigger;
         lastDebugGripperIr = gripperIrTriggered;
@@ -1117,12 +1198,9 @@ public class RobotBrain : Agent
         continuousActions[0] = clampedGas;
         continuousActions[1] = clampedSteer;
 
-        int gripCommand = 0;
-        if (keyboard.gKey.wasPressedThisFrame)
-            gripCommand = 1;
-        else if (keyboard.rKey.wasPressedThisFrame)
-            gripCommand = 2;
+        int gripCommand = (int)pendingHeuristicGripCommand;
         discreteActions[0] = gripCommand;
+        pendingHeuristicGripCommand = RobotGripperCommand.None;
 
         // Обновляем историю для согласованности наблюдений в эвристическом режиме
         prevGas = clampedGas;
