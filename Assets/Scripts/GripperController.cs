@@ -21,8 +21,17 @@ public class GripperController : MonoBehaviour
     // Ссылка на мяч, который находится в триггере (если используем триггер)
     private GameObject ballInTrigger;
 
+    // OnTriggerEnter/Exit могут дребезжать на каждом физическом шаге (мяч на
+    // границе триггера), а Grab()/Release() агент дёргает часто в процессе
+    // исследования — Debug.Log на каждое такое событие ощутимо грузит
+    // диск/консоль при обучении на многих аренах, поэтому логируем только
+    // вне обучения.
+    private RobotBrain robotBrain;
+
     void Start()
     {
+        robotBrain = GetComponentInParent<RobotBrain>();
+
         // Если holdPoint не назначен вручную, пытаемся найти дочерний объект с именем "HoldPoint"
         if (holdPoint == null)
         {
@@ -31,6 +40,8 @@ public class GripperController : MonoBehaviour
                 Debug.LogWarning("HoldPoint не найден! Назначьте его в инспекторе.");
         }
     }
+
+    private bool IsTraining => robotBrain != null && robotBrain.isTraining;
 
     // ========== МЕТОДЫ ДЛЯ ВЫЗОВА ИЗВНЕ (например, из скрипта управления) ==========
 
@@ -113,7 +124,7 @@ public class GripperController : MonoBehaviour
 
         // Открываем клешню
         isOpen = true;
-        Debug.Log("Клешня открыта");
+        if (!IsTraining) Debug.Log("Клешня открыта");
     }
 
     // ========== ВНУТРЕННЯЯ ЛОГИКА ==========
@@ -150,14 +161,14 @@ public class GripperController : MonoBehaviour
         // Очищаем триггерную ссылку
         ballInTrigger = null;
 
-        Debug.Log("Мяч захвачен!");
+        if (!IsTraining) Debug.Log("Мяч захвачен!");
     }
 
     private void CloseWithoutGrab()
     {
         isOpen = false;
         // isGrabbing остаётся false
-        Debug.Log("Клешня закрыта без мяча");
+        if (!IsTraining) Debug.Log("Клешня закрыта без мяча");
     }
 
     // ========== ОБРАБОТКА ТРИГГЕРА ==========
@@ -168,7 +179,7 @@ public class GripperController : MonoBehaviour
         if (other.CompareTag(targetTag))
         {
             ballInTrigger = other.gameObject;
-            Debug.Log("Мяч вошёл в зону захвата");
+            if (!IsTraining) Debug.Log("Мяч вошёл в зону захвата");
         }
     }
 
@@ -179,7 +190,7 @@ public class GripperController : MonoBehaviour
             if (ballInTrigger == other.gameObject && !isGrabbing)
             {
                 ballInTrigger = null;
-                Debug.Log("Мяч покинул зону захвата");
+                if (!IsTraining) Debug.Log("Мяч покинул зону захвата");
             }
         }
     }
