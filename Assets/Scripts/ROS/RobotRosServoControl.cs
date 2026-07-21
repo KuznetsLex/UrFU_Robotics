@@ -17,8 +17,8 @@ namespace Team11.Ros
         private const float ElbowMaxAngle = 180f;
         private const float ClawMinAngle = 44f;
         private const float ClawMaxAngle = 105f;
-        private const float CameraMinAngle = 0f;
-        private const float CameraMaxAngle = 180f;
+        private const float CameraMinAngle = CameraRotator.MinAngle;
+        private const float CameraMaxAngle = CameraRotator.MaxAngle;
 
         private static readonly string[] JointNames =
         {
@@ -51,10 +51,27 @@ namespace Team11.Ros
         [SerializeField, Range(CameraMinAngle, CameraMaxAngle)]
         private float cameraAngle = 90f;
 
+        [Header("Policy camera pan")]
+        [Tooltip("Estimated real actuator speed used when hardware angle feedback is unavailable.")]
+        [SerializeField, Min(1f)]
+        private float cameraEstimatedSpeedDegreesPerSecond = 140f;
+
+        [Tooltip("Do not publish camera target changes smaller than this value.")]
+        [SerializeField, Min(0f)]
+        private float cameraCommandDeadbandDegrees = 0.5f;
+
+        [Tooltip("Maximum ROS publish rate for policy-driven camera target updates.")]
+        [SerializeField, Min(1f)]
+        private float cameraCommandPublishRateHz = 20f;
+
         private ROSConnection ros;
         private string status = "Set target angles in the Inspector, then press Apply to robot";
         private bool hasCommandedClawState = true;
         private bool commandedClawOpen = true;
+        private float desiredCameraAngle = CameraRotator.CenterAngle;
+        private float estimatedCameraAngle = CameraRotator.CenterAngle;
+        private float lastCameraEstimateTime;
+        private float nextCameraPolicyPublishTime;
 
         public string Status => status;
 
@@ -62,6 +79,13 @@ namespace Team11.Ros
         {
             isOpen = commandedClawOpen;
             return hasCommandedClawState;
+        }
+
+        public bool TryGetCameraPanState(out float normalizedAngle)
+        {
+            UpdateEstimatedCameraAngle();
+            normalizedAngle = CameraRotator.NormalizeAngle(estimatedCameraAngle);
+            return true;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -87,6 +111,10 @@ namespace Team11.Ros
         {
             ros = ROSConnection.GetOrCreateInstance();
             ros.RegisterPublisher<JointStateMsg>(JointCommandTopic, queue_size: 1);
+            cameraAngle = CameraRotator.ClampAngle(cameraAngle);
+            desiredCameraAngle = cameraAngle;
+            estimatedCameraAngle = cameraAngle;
+            lastCameraEstimateTime = Time.unscaledTime;
         }
 
         [ContextMenu("Reset servo targets")]
@@ -96,7 +124,10 @@ namespace Team11.Ros
             shoulderAngle = 150f;
             elbowAngle = 90f;
             clawAngle = 50f;
-            cameraAngle = 90f;
+            cameraAngle = CameraRotator.CenterAngle;
+            desiredCameraAngle = cameraAngle;
+            estimatedCameraAngle = cameraAngle;
+            lastCameraEstimateTime = Time.unscaledTime;
             commandedClawOpen = true;
             hasCommandedClawState = true;
             status = "Home targets loaded; press Apply to robot to move";
@@ -110,6 +141,9 @@ namespace Team11.Ros
                 status = "ROS connection is unavailable";
                 return;
             }
+
+            cameraAngle = CameraRotator.ClampAngle(cameraAngle);
+            desiredCameraAngle = cameraAngle;
 
             commandedClawOpen = Mathf.Abs(clawAngle - clawOpenAngle) <=
                 Mathf.Abs(clawAngle - clawClosedAngle);
@@ -145,15 +179,47 @@ namespace Team11.Ros
 
         public void ApplyGripperCommand(RobotGripperCommand command)
         {
-            if (command == RobotGripperCommand.None)
+            ApplyPolicyCommand(
+                CameraRotator.NormalizeAngle(desiredCameraAngle),
+                command);
+        }
+
+        public void ApplyPolicyCommand(
+            float normalizedCameraTarget,
+            RobotGripperCommand gripperCommand)
+        {
+            UpdateEstimatedCameraAngle();
+            desiredCameraAngle = CameraRotator.DenormalizeAngle(normalizedCameraTarget);
+
+            bool gripperChanged = gripperCommand != RobotGripperCommand.None;
+            if (gripperChanged)
             {
-                return;
+                commandedClawOpen = gripperCommand == RobotGripperCommand.Release;
+                hasCommandedClawState = true;
+                clawAngle = commandedClawOpen ? clawOpenAngle : clawClosedAngle;
             }
 
-            commandedClawOpen = command == RobotGripperCommand.Release;
-            hasCommandedClawState = true;
-            clawAngle = commandedClawOpen ? clawOpenAngle : clawClosedAngle;
+            bool cameraChanged = Mathf.Abs(desiredCameraAngle - cameraAngle) >=
+                cameraCommandDeadbandDegrees;
+            bool cameraPublishReady = Time.unscaledTime >= nextCameraPolicyPublishTime;
+            if (!gripperChanged && (!cameraChanged || !cameraPublishReady))
+                return;
+
+            cameraAngle = desiredCameraAngle;
+            nextCameraPolicyPublishTime = Time.unscaledTime +
+                1f / Mathf.Max(1f, cameraCommandPublishRateHz);
             PublishTargetAngles();
+        }
+
+        private void UpdateEstimatedCameraAngle()
+        {
+            float now = Time.unscaledTime;
+            float deltaTime = Mathf.Max(0f, now - lastCameraEstimateTime);
+            lastCameraEstimateTime = now;
+            estimatedCameraAngle = Mathf.MoveTowards(
+                estimatedCameraAngle,
+                cameraAngle,
+                Mathf.Max(1f, cameraEstimatedSpeedDegreesPerSecond) * deltaTime);
         }
     }
 }
