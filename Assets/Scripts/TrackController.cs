@@ -26,7 +26,14 @@ public class TrackController : MonoBehaviour
 
     private void Start()
     {
-        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        // Интерполяция сглаживает движение между физическими шагами только для
+        // глаз наблюдателя — при обучении её никто не видит, а считать её
+        // приходится на каждом физическом шаге для каждого робота на каждой
+        // арене, поэтому во время обучения отключаем.
+        RobotBrain brain = GetComponent<RobotBrain>();
+        rb.interpolation = (brain != null && brain.isTraining)
+            ? RigidbodyInterpolation.None
+            : RigidbodyInterpolation.Interpolate;
         rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
         rb.linearDamping = 8f;
         rb.angularDamping = 10f;
