@@ -122,9 +122,9 @@ public class EnvironmentManager : MonoBehaviour
         float height = baseWallHeight * globalScale;
         float thickness = 0.1f * globalScale; // Базовая толщина стены 10 см
 
-        // Создаем 4 стены вокруг полигона
+        // Стены вокруг полигона. Wall_Bottom (сзади стартовой позиции робота,
+        // -Z) намеренно не строим — с этой стороны арена теперь открыта.
         CreateWall("Wall_Top", new Vector3(0, height / 2f, currentArenaZ / 2f + thickness / 2f), new Vector3(currentArenaX + thickness * 2f, height, thickness));
-        CreateWall("Wall_Bottom", new Vector3(0, height / 2f, -currentArenaZ / 2f - thickness / 2f), new Vector3(currentArenaX + thickness * 2f, height, thickness));
         CreateWall("Wall_Right", new Vector3(currentArenaX / 2f + thickness / 2f, height / 2f, 0), new Vector3(thickness, height, currentArenaZ));
         CreateWall("Wall_Left", new Vector3(-currentArenaX / 2f - thickness / 2f, height / 2f, 0), new Vector3(thickness, height, currentArenaZ));
     }
