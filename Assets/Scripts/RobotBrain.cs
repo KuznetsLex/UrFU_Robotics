@@ -301,6 +301,9 @@ public class RobotBrain : Agent
     [Tooltip("Случайные moveSpeed/turnSpeed привода в начале каждого эпизода")]
     public bool randomizeMotorParams = true;
 
+    [Tooltip("Случайная скорость сервопривода поворота камеры (град/с) в начале каждого эпизода")]
+    public bool randomizeCameraServoSpeed = true;
+
     [Tooltip("Шум ±5% на нормализованное показание ультразвука")]
     public bool addUltrasonicNoise = true;
 
@@ -634,12 +637,15 @@ public class RobotBrain : Agent
                 trackController.turnSpeed = UnityEngine.Random.Range(100f, 140f);
             }
 
+            if (randomizeCameraServoSpeed && cameraRotator != null)
+                cameraRotator.SetServoSpeed(UnityEngine.Random.Range(80f, 200f));
+
             if (enableCommandLatency)
             {
                 currentActionLatencySteps = UnityEngine.Random.Range(8, 14);
                 actionLatencyBuffer.Clear();
                 for (int i = 0; i < currentActionLatencySteps; i++)
-                    actionLatencyBuffer.Enqueue(new float[] { 0f, 0f });
+                    actionLatencyBuffer.Enqueue(new float[] { 0f, 0f, 0f });
             }
             else
             {
@@ -1020,20 +1026,24 @@ public class RobotBrain : Agent
         // отправлено currentActionLatencySteps шагов назад — имитирует связь с
         // реальным роботом. Награды/наблюдения по-прежнему считаются от текущего
         // (незадержанного) действия политики, задерживается только его исполнение.
+        // Поворот камеры задерживаем тем же способом, что и газ/руль — это тоже
+        // реальный привод со своей связью, а не мгновенно отрабатывающая команда.
         float appliedLinear = normalizedLinear;
         float appliedSteer = clampedSteer;
+        float appliedCameraPanTarget = cameraPanTarget;
         if (currentActionLatencySteps > 0)
         {
-            actionLatencyBuffer.Enqueue(new float[] { normalizedLinear, clampedSteer });
+            actionLatencyBuffer.Enqueue(new float[] { normalizedLinear, clampedSteer, cameraPanTarget });
             float[] delayedAction = actionLatencyBuffer.Dequeue();
             appliedLinear = delayedAction[0];
             appliedSteer = delayedAction[1];
+            appliedCameraPanTarget = delayedAction[2];
         }
 
         var robotCommand = new RobotCommand(
             appliedLinear,
             appliedSteer,
-            cameraPanTarget,
+            appliedCameraPanTarget,
             appliedGripCommand);
         RobotCommandResult commandResult = GetSelectedCommandSink()?.ApplyCommand(robotCommand)
             ?? RobotCommandResult.Unavailable;

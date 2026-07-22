@@ -63,6 +63,7 @@ RobotBrain:
   # --- Domain Randomization ---
   randomizeMass: true
   randomizeMotorParams: true
+  randomizeCameraServoSpeed: true
   addUltrasonicNoise: true
   enableBurstDropout: true
   enableCommandLatency: true

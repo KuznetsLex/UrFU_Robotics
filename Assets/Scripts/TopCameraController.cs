@@ -82,6 +82,15 @@ public class CameraRotator : MonoBehaviour
         targetAngle = safeTarget;
     }
 
+    /// <summary>
+    /// Used for domain randomization — real servos vary in max slew rate between
+    /// units/batches, so this is randomized per episode rather than fixed.
+    /// </summary>
+    public void SetServoSpeed(float degreesPerSecond)
+    {
+        maxSpeedDegreesPerSecond = Mathf.Max(1f, degreesPerSecond);
+    }
+
     public void ResetPan(float normalizedAngle)
     {
         float safeAngle = DenormalizeAngle(normalizedAngle);
