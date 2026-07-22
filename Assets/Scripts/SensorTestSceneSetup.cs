@@ -19,8 +19,6 @@ public sealed class SensorTestSceneSetup : MonoBehaviour
         if (brain != null)
         {
             brain.isTraining = false;
-            brain.randomizeSpawn = false;
-            brain.randomizeBall = false;
             brain.environmentManager = null;
             brain.MaxStep = 0;
             brain.UseRealRobotIo = false;

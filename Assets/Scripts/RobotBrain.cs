@@ -209,9 +209,6 @@ public class RobotBrain : Agent
 
     // ==================== ГРАНИЦЫ СРЕДЫ ====================
     [Header("Границы среды")]
-    [Tooltip("Половина размера арены по осям X и Z (прямоугольная область)")]
-    public Vector2 arenaHalfExtents = new Vector2(300f, 300f);
-
     [Tooltip("Порог падения по оси Y (ниже которого эпизод завершается)")]
     public float fallDistance = 3f;
 
@@ -263,25 +260,11 @@ public class RobotBrain : Agent
     [Tooltip("Величина штрафа за превышение любого порога скорости (отрицательное число)")]
     public float speedPenaltyAmount = -0.05f;
 
-    // ==================== РАНДОМИЗАЦИЯ СТАРТОВЫХ ПОЗИЦИЙ ====================
-    [Header("Spawn Randomization")]
-    [Tooltip("Половина размера спавна по осям X и Z (прямоугольная область)")]
-    public Vector2 spawnHalfExtents = new Vector2(15f, 15f);
-
-    [Tooltip("Включает случайную позицию робота при старте каждого эпизода")]
-    public bool randomizeSpawn = true;
-
-    [Tooltip("Включает случайную позицию мяча при старте каждого эпизода")]
-    public bool randomizeBall = true;
-
-    [Tooltip("Минимальное расстояние между роботом и мячом при рандомизации (чтобы не спавниться друг на друге)")]
-    public float minSpawnDistance = 2f;
-
+    // ==================== ДОМЕННАЯ РАНДОМИЗАЦИЯ (ДИНАМИКА) ====================
+    [Header("Domain Randomization")]
     [Tooltip("Master switch for camera, robot spawn and ball spawn randomization.")]
     public bool isTraining = true;
 
-    // ==================== ДОМЕННАЯ РАНДОМИЗАЦИЯ (ДИНАМИКА) ====================
-    [Header("Domain Randomization")]
     [Tooltip("Случайная масса корпуса (1.0-4.0) в начале каждого эпизода — для устойчивости к неточной модели инерции")]
     public bool randomizeMass = true;
 
@@ -340,6 +323,7 @@ public class RobotBrain : Agent
     private int targetLostCount;
     private bool grabZoneRewardGranted;
     private int previousGripCommand = 0; // Предыдущая команда клешни (0 – ничего, 1 – захват, 2 – отпустить)
+    public Vector2 arenaHalfExtents = new Vector2(15f, 30f);
 
     // Статистика эпизода для TensorBoard
     private Dictionary<string, float> rewardSumDict;
@@ -457,16 +441,6 @@ public class RobotBrain : Agent
         return false;
     }
 
-    /// <summary>
-    /// Генерирует случайную позицию в пределах арены на заданной высоте Y.
-    /// </summary>
-    private Vector3 GetRandomPosition(float y)
-    {
-        float x = Random.Range(-spawnHalfExtents.x, spawnHalfExtents.x);
-        float z = Random.Range(-spawnHalfExtents.y, spawnHalfExtents.y);
-        return new Vector3(x, y, z);
-    }
-
     public override void OnEpisodeBegin()
     {
         if (!useRealRobotIo)
@@ -475,36 +449,6 @@ public class RobotBrain : Agent
                 yoloCamera?.RandomizeDomainParameters();
             else
                 yoloCamera?.ResetDomainParameters();
-        }
-
-        // ----- Рандомизация стартовых позиций (если включено, нет EnvironmentManager
-        // и идёт обучение) -----
-        // Когда назначен EnvironmentManager, он сам расставляет робота и мяч (с учётом
-        // стен/пути/препятствий) ниже, используя последний сгенерированный startPos/
-        // ballStartPos между перегенерациями — простой сброс к initialStartPos и
-        // рандомизация по прямоугольнику здесь их бы сразу перезаписали.
-        if (environmentManager == null)
-        {
-            startPos = initialStartPos;
-            if (ball != null)
-                ballStartPos = initialBallStartPos;
-
-            if (isTraining && randomizeSpawn)
-            {
-                startPos = GetRandomPosition(startPos.y);
-            }
-
-            if (isTraining && randomizeBall && ball != null)
-            {
-                Vector3 newBallPos;
-                int attempts = 0;
-                do
-                {
-                    newBallPos = GetRandomPosition(ballStartPos.y);
-                    attempts++;
-                } while (Vector3.Distance(newBallPos, startPos) < minSpawnDistance && attempts < 50);
-                ballStartPos = newBallPos;
-            }
         }
 
         // Сброс статистики
