@@ -165,7 +165,7 @@ PrefabInstance:
   m_SourcePrefab: {fileID: 100100000, guid: b819daf08ac219a4eac163913503be94, type: 3}
 --- !u!4 &3001 stripped
 Transform:
-  m_CorrespondingSourceObject: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+  m_CorrespondingSourceObject: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
   m_PrefabInstance: {fileID: 3002}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &3002
@@ -176,35 +176,35 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 8420677910478226421, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_Name
       value: Sensor Test Robot
       objectReference: {fileID: 0}
-    - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalPosition.y
       value: 0.809
       objectReference: {fileID: 0}
-    - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalRotation.w
       value: 1
       objectReference: {fileID: 0}
-    - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalRotation.x
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalRotation.y
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+    - target: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_LocalRotation.z
       value: 0
       objectReference: {fileID: 0}
