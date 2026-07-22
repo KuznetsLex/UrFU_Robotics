@@ -52,6 +52,14 @@ namespace Team11.Ros
                 return;
             }
 
+            // SensorTest owns its simulation HUD and camera preview. Installing
+            // the ROS teleop there would draw a second HUD and connect to the
+            // physical robot from a scene intended only for virtual sensor checks.
+            if (FindAnyObjectByType<SensorTestSceneSetup>() != null)
+            {
+                return;
+            }
+
             // Во время обучения (сцена с RobotBrain.isTraining = true) не подключаемся
             // к реальному роботу вообще: иначе WASD, нажатый случайно во время
             // наблюдения за тренировкой, уйдёт как команда на физического робота.
@@ -72,10 +80,15 @@ namespace Team11.Ros
             EnsureCameraView(ros);
             ros.RosIPAddress = RobotIpAddress;
             ros.RosPort = RobotTcpPort;
-            ros.ConnectOnStart = true;
+            // RobotRosTeleop itself is installed after the scene loads. Do not
+            // depend on whether ROSConnection.Start() has already run: own the
+            // connection lifecycle explicitly and connect after configuration.
+            ros.ConnectOnStart = false;
             ros.ShowHud = true;
             ros.RegisterPublisher<TwistMsg>(CommandTopic, queue_size: 1);
             ros.Subscribe<QuaternionMsg>(SensorDataTopic, OnSensorData);
+            if (!ros.HasConnectionThread)
+                ros.Connect(RobotIpAddress, RobotTcpPort);
         }
 
         private static void EnsureCameraView(ROSConnection connection)
@@ -147,14 +160,15 @@ namespace Team11.Ros
             hasFreshCommand = true;
             lastCommandTime = Time.unscaledTime;
 
-            if (!emergencyStop && applicationHasFocus &&
-                command.Gripper != lastGripperCommand)
+            if (!emergencyStop && applicationHasFocus)
             {
-                if (command.Gripper != RobotGripperCommand.None)
-                {
-                    ResolveServoControl()?.ApplyGripperCommand(command.Gripper);
-                }
-
+                RobotGripperCommand servoGripperCommand =
+                    command.Gripper != lastGripperCommand
+                        ? command.Gripper
+                        : RobotGripperCommand.None;
+                ResolveServoControl()?.ApplyPolicyCommand(
+                    command.CameraPanTarget,
+                    servoGripperCommand);
                 lastGripperCommand = command.Gripper;
             }
 
@@ -186,6 +200,18 @@ namespace Team11.Ros
             }
 
             isOpen = false;
+            return false;
+        }
+
+        public bool TryGetCameraPanState(out float normalizedAngle)
+        {
+            RobotRosServoControl control = ResolveServoControl();
+            if (control != null)
+            {
+                return control.TryGetCameraPanState(out normalizedAngle);
+            }
+
+            normalizedAngle = 0f;
             return false;
         }
 
@@ -289,7 +315,9 @@ namespace Team11.Ros
         {
             const int width = 440;
             const int height = 226;
-            var panel = new Rect(Screen.width - width - 10, 10, width, height);
+            const float cameraPanelHeight = 229f;
+            float panelX = Mathf.Max(10f, Screen.width - width - 16f);
+            var panel = new Rect(panelX, 16f + cameraPanelHeight + 12f, width, height);
 
             if (robotBrain == null)
             {

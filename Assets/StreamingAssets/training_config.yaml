@@ -21,6 +21,7 @@
 
 RobotBrain:
   # --- Inference I/O source ---
+  ultrasonicObservationMaxMeters: 5
   regenerateEveryEpisodes: 10
 
   # --- Основные награды и штрафы ---
@@ -56,11 +57,7 @@ RobotBrain:
   speedPenaltyThresholdAngular: 30
   speedPenaltyAmount: -0.05
 
-  # --- Spawn Randomization ---
-  spawnHalfExtents: [15, 15]
-  randomizeSpawn: true
-  randomizeBall: true
-  minSpawnDistance: 2
+  # --- Training mode ---
   isTraining: true
 
   # --- Domain Randomization ---

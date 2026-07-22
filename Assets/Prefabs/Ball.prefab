@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 694717809858048157}
   - component: {fileID: 5477895239297267161}
   - component: {fileID: 5116158870508601863}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ball
   m_TagString: TargetBall
   m_Icon: {fileID: 0}
@@ -99,7 +99,7 @@ SphereCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 947487244296708059}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: 0c847313aa68414c972ea54783323162, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0

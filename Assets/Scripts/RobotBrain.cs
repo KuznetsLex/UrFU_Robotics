@@ -22,23 +22,30 @@ public enum RobotGripAttemptResult
 }
 
 /// <summary>
-/// Backend-independent robot command. Linear and angular values are normalized
-/// to [-1, 1]; positive angular means a right turn in the policy coordinate system.
+/// Backend-independent robot command. Linear, angular and camera pan values are
+/// normalized to [-1, 1]; camera pan is an absolute target, not a velocity.
 /// </summary>
 public readonly struct RobotCommand
 {
-    public RobotCommand(float linear, float angular, RobotGripperCommand gripper)
+    public RobotCommand(
+        float linear,
+        float angular,
+        float cameraPanTarget,
+        RobotGripperCommand gripper)
     {
         Linear = Mathf.Clamp(linear, -1f, 1f);
         Angular = Mathf.Clamp(angular, -1f, 1f);
+        CameraPanTarget = Mathf.Clamp(cameraPanTarget, -1f, 1f);
         Gripper = gripper;
     }
 
     public float Linear { get; }
     public float Angular { get; }
+    public float CameraPanTarget { get; }
     public RobotGripperCommand Gripper { get; }
 
-    public static RobotCommand Stopped => new RobotCommand(0f, 0f, RobotGripperCommand.None);
+    public static RobotCommand Stopped =>
+        new RobotCommand(0f, 0f, 0f, RobotGripperCommand.None);
 }
 
 public readonly struct RobotCommandResult
@@ -69,19 +76,23 @@ public interface IRobotCommandSink
     RobotCommandResult ApplyCommand(RobotCommand command);
     void Stop();
     bool TryGetGripperState(out bool isOpen);
+    bool TryGetCameraPanState(out float normalizedAngle);
 }
 
 public sealed class SimulationRobotCommandSink : IRobotCommandSink
 {
     private readonly TrackController trackController;
     private readonly GripperController gripperController;
+    private readonly CameraRotator cameraRotator;
 
     public SimulationRobotCommandSink(
         TrackController trackController,
-        GripperController gripperController)
+        GripperController gripperController,
+        CameraRotator cameraRotator)
     {
         this.trackController = trackController;
         this.gripperController = gripperController;
+        this.cameraRotator = cameraRotator;
     }
 
     public RobotCommandResult ApplyCommand(RobotCommand command)
@@ -92,6 +103,8 @@ public sealed class SimulationRobotCommandSink : IRobotCommandSink
                 command.Linear * trackController.maxLinearCmd,
                 command.Angular);
         }
+
+        cameraRotator?.SetNormalizedTarget(command.CameraPanTarget);
 
         RobotGripAttemptResult gripAttempt = RobotGripAttemptResult.None;
         if (gripperController != null)
@@ -131,6 +144,14 @@ public sealed class SimulationRobotCommandSink : IRobotCommandSink
         isOpen = gripperController != null && gripperController.IsOpen;
         return gripperController != null;
     }
+
+    public bool TryGetCameraPanState(out float normalizedAngle)
+    {
+        normalizedAngle = cameraRotator != null
+            ? cameraRotator.CurrentNormalized
+            : 0f;
+        return cameraRotator != null;
+    }
 }
 
 /// <summary>
@@ -145,6 +166,7 @@ public class RobotBrain : Agent
     public TrackController trackController;
     public VirtualSensors sensors;
     public SimulatedYoloCamera yoloCamera;
+    public CameraRotator cameraRotator;
     public Transform gripperTransform;
     public Transform holdPoint;
     public Transform ball;
@@ -153,6 +175,10 @@ public class RobotBrain : Agent
     [Tooltip("Use the physical robot for both policy observations and policy commands.")]
     [FormerlySerializedAs("useRealRobotSensors")]
     [SerializeField] private bool useRealRobotIo;
+
+    [Header("Policy observation normalization")]
+    [Tooltip("Distance represented by ultrasonic observation value 1.0, in meters.")]
+    [Min(0.01f)] public float ultrasonicObservationMaxMeters = 5f;
 
     public bool UseRealRobotIo
     {
@@ -174,6 +200,10 @@ public class RobotBrain : Agent
         get => UseRealRobotIo;
         set => UseRealRobotIo = value;
     }
+
+    [Header("Inference Debug")]
+    [Tooltip("Логировать изменения команды захвата, Grip IR, триггера и состояния клешни.")]
+    public bool logGripperInferenceDebug;
 
     [Tooltip("Опционально: если назначен, периодически генерирует новые стены/путь/препятствия и переставляет робота и мяч, вместо возврата на фиксированную стартовую позицию")]
     public EnvironmentManager environmentManager;
@@ -294,6 +324,9 @@ public class RobotBrain : Agent
     private int currentActionLatencySteps = 0;
     private int burstDropoutRemaining = 0;
 
+    [Tooltip("Start each simulated training episode with the shared camera/ultrasonic pivot at a random safe angle.")]
+    public bool randomizeCameraPanOnEpisodeBegin = true;
+
     // ==================== ПРИВАТНЫЕ ПОЛЯ ====================
     private Rigidbody rb;
     private Vector3 startPos;
@@ -312,6 +345,7 @@ public class RobotBrain : Agent
     private float lastKnownAspectRatio;
     private float prevGas;
     private float prevSteer;
+    private float previousCameraPanTarget;
     private float previousCameraScore;
     private bool previousCameraVisible;
     private bool cameraMeasurementPending;
@@ -321,6 +355,12 @@ public class RobotBrain : Agent
     private int cameraMeasurementCount;
     private int targetAcquiredCount;
     private int targetLostCount;
+    private float cameraPanCurrentSum;
+    private float cameraPanTargetSum;
+    private float cameraPanMovementSum;
+    private float previousMeasuredCameraPan;
+    private int cameraPanSampleCount;
+    private int cameraPanAtLimitCount;
     private bool grabZoneRewardGranted;
     private int previousGripCommand = 0; // Предыдущая команда клешни (0 – ничего, 1 – захват, 2 – отпустить)
     private Vector2 arenaHalfExtents = new Vector2(15f, 30f);
@@ -336,6 +376,17 @@ public class RobotBrain : Agent
     private SimulationRobotCommandSink simulationCommandSink;
     private int pendingCollisionPenalties;
     private float nextCollisionPenaltyTime;
+    private bool hasGripperDebugSnapshot;
+    private RobotGripperCommand lastDebugGripCommand;
+    private RobotGripperCommand lastDebugAppliedGripCommand;
+    private RobotGripAttemptResult lastDebugGripAttempt;
+    private bool lastDebugTargetInTrigger;
+    private bool lastDebugGripperIr;
+    private bool lastDebugIsOpen;
+    private bool lastDebugIsGrabbing;
+    private RobotGripperCommand pendingHeuristicGripCommand;
+    private RobotGripperCommand lastAppliedGripCommand;
+    private float heuristicCameraPanTarget;
 
     // ==================== МЕТОДЫ ЖИЗНЕННОГО ЦИКЛА ====================
 
@@ -346,11 +397,13 @@ public class RobotBrain : Agent
         rb = GetComponent<Rigidbody>();
         if (trackController == null) trackController = GetComponent<TrackController>();
         if (sensors == null) sensors = GetComponent<VirtualSensors>();
+        if (cameraRotator == null) cameraRotator = GetComponentInChildren<CameraRotator>(true);
         if (collisionObstacleMask == 0)
             collisionObstacleMask = LayerMask.GetMask("Obstacle");
         simulationCommandSink = new SimulationRobotCommandSink(
             trackController,
-            gripperTransform?.GetComponent<GripperController>());
+            gripperTransform?.GetComponent<GripperController>(),
+            cameraRotator);
     }
 
     public override void Initialize()
@@ -388,6 +441,33 @@ public class RobotBrain : Agent
         cameraMeasurementCount = 0;
         targetAcquiredCount = 0;
         targetLostCount = 0;
+        cameraPanCurrentSum = 0f;
+        cameraPanTargetSum = 0f;
+        cameraPanMovementSum = 0f;
+        previousMeasuredCameraPan = cameraRotator != null
+            ? cameraRotator.CurrentNormalized
+            : 0f;
+        cameraPanSampleCount = 0;
+        cameraPanAtLimitCount = 0;
+        previousCameraPanTarget = previousMeasuredCameraPan;
+        heuristicCameraPanTarget = previousCameraPanTarget;
+    }
+
+    private void Update()
+    {
+        var keyboard = Keyboard.current;
+        if (keyboard == null)
+            return;
+
+        // Heuristic вызывается только на шагах принятия решения. Буфер сохраняет
+        // короткое нажатие до ближайшего решения агента.
+        if (keyboard.gKey.wasPressedThisFrame)
+            pendingHeuristicGripCommand = RobotGripperCommand.Grab;
+        else if (keyboard.rKey.wasPressedThisFrame)
+            pendingHeuristicGripCommand = RobotGripperCommand.Release;
+
+        if (keyboard.cKey.wasPressedThisFrame)
+            heuristicCameraPanTarget = 0f;
     }
 
     private static bool IsLoadedSceneObject(Transform target)
@@ -439,6 +519,18 @@ public class RobotBrain : Agent
         return false;
     }
 
+    private bool TryGetSelectedCameraPanState(out float normalizedAngle)
+    {
+        IRobotCommandSink commandSink = GetSelectedCommandSink();
+        if (commandSink != null)
+        {
+            return commandSink.TryGetCameraPanState(out normalizedAngle);
+        }
+
+        normalizedAngle = 0f;
+        return false;
+    }
+
     public override void OnEpisodeBegin()
     {
         if (!useRealRobotIo)
@@ -463,6 +555,11 @@ public class RobotBrain : Agent
         cameraMeasurementCount = 0;
         targetAcquiredCount = 0;
         targetLostCount = 0;
+        cameraPanCurrentSum = 0f;
+        cameraPanTargetSum = 0f;
+        cameraPanMovementSum = 0f;
+        cameraPanSampleCount = 0;
+        cameraPanAtLimitCount = 0;
         pendingCollisionPenalties = 0;
         nextCollisionPenaltyTime = Time.fixedTime;
 
@@ -516,8 +613,7 @@ public class RobotBrain : Agent
         }
         else
         {
-            // Без EnvironmentManager — startPos/ballStartPos уже посчитаны выше
-            // через randomizeSpawn/randomizeBall (или остались от прошлого эпизода).
+            // Без EnvironmentManager возвращаем робота в сохранённую стартовую позу.
             rb.position = startPos;
             rb.rotation = startRot;
         }
@@ -576,6 +672,22 @@ public class RobotBrain : Agent
             ? Vector3.Distance(holdPoint.position, ball.position)
             : 0f;
         previousGripCommand = 0;
+        hasGripperDebugSnapshot = false;
+        pendingHeuristicGripCommand = RobotGripperCommand.None;
+        lastAppliedGripCommand = RobotGripperCommand.None;
+
+        if (!useRealRobotIo && cameraRotator != null)
+        {
+            float episodeStartPan = isTraining && randomizeCameraPanOnEpisodeBegin
+                ? Random.Range(-1f, 1f)
+                : 0f;
+            cameraRotator.ResetPan(episodeStartPan);
+        }
+
+        TryGetSelectedCameraPanState(out float currentCameraPan);
+        previousCameraPanTarget = currentCameraPan;
+        heuristicCameraPanTarget = currentCameraPan;
+        previousMeasuredCameraPan = currentCameraPan;
     }
 
     private void ResetBall()
@@ -683,7 +795,7 @@ public class RobotBrain : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1. Ультразвук (сырое расстояние) и ИК-датчики
+        // 1. Ультразвук: физические метры преобразуются в 0..1; ИК — бинарные.
         TryGetSelectedRangeSensors(
             out float ultrasonicMeters,
             out bool leftIr,
@@ -695,12 +807,12 @@ public class RobotBrain : Agent
         bool simulateSensorNoise = !useRealRobotIo && isTraining;
         if (simulateSensorNoise)
         {
-            float maxUltrasonicDistance = sensors != null ? sensors.ultrasonicMaxDistance : 50f;
+            float maxUltrasonicMeters = Mathf.Max(0.01f, ultrasonicObservationMaxMeters);
             if (addUltrasonicNoise)
-                ultrasonicMeters += UnityEngine.Random.Range(-0.05f, 0.05f) * maxUltrasonicDistance;
+                ultrasonicMeters += UnityEngine.Random.Range(-0.05f, 0.05f) * maxUltrasonicMeters;
             if (enableUltrasonicFaults && UnityEngine.Random.value < ultrasonicFaultProbability)
-                ultrasonicMeters = UnityEngine.Random.Range(0f, maxUltrasonicDistance);
-            ultrasonicMeters = Mathf.Clamp(ultrasonicMeters, 0f, maxUltrasonicDistance);
+                ultrasonicMeters = UnityEngine.Random.Range(0f, maxUltrasonicMeters);
+            ultrasonicMeters = Mathf.Clamp(ultrasonicMeters, 0f, maxUltrasonicMeters);
 
             if (enableIRFaults)
             {
@@ -710,7 +822,9 @@ public class RobotBrain : Agent
             }
         }
 
-        sensor.AddObservation(ultrasonicMeters);
+        float normalizedUltrasonic = Mathf.Clamp01(
+            ultrasonicMeters / Mathf.Max(0.01f, ultrasonicObservationMaxMeters));
+        sensor.AddObservation(normalizedUltrasonic);
         sensor.AddObservation(leftIr ? 1f : 0f);
         sensor.AddObservation(rightIr ? 1f : 0f);
         sensor.AddObservation(gripperMountedIr ? 1f : 0f);
@@ -757,19 +871,71 @@ public class RobotBrain : Agent
         sensor.AddObservation(effectiveVisible ? targetInfo.aspectRatio : lastKnownAspectRatio);
         sensor.AddObservation(effectiveVisible ? 1f : 0f);
 
-        // 3. Состояние клешни (открыта/закрыта)
-        TryGetSelectedGripperState(out bool isGripperOpen);
-        sensor.AddObservation(isGripperOpen ? 1f : 0f);
+        // 3. Состояние клешни: закрыта = +1, открыта = -1, неизвестно = 0.
+        bool hasGripperState = TryGetSelectedGripperState(out bool isGripperOpen);
+        sensor.AddObservation(hasGripperState
+            ? (isGripperOpen ? -1f : 1f)
+            : 0f);
 
         // 4. Доля шагов без обнаружения цели
         sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / Mathf.Max(1f, noDetectionSteps)));
 
         // ----- 5. ПРЕДЫДУЩИЕ ДЕЙСТВИЯ (только один предыдущий шаг) -----
-        // Газ и руль с учётом клиппинга
-        sensor.AddObservation(prevGas);
+        // Предыдущие газ и руль в едином policy-диапазоне -1..1.
+        float maxLinearCommand = trackController != null
+            ? Mathf.Max(Mathf.Epsilon, trackController.maxLinearCmd)
+            : 1f;
+        sensor.AddObservation(Mathf.Clamp(prevGas / maxLinearCommand, -1f, 1f));
         sensor.AddObservation(prevSteer);
-        // Команда клешни
-        sensor.AddObservation(previousGripCommand);
+        // Команда клешни: Grab/закрыть = +1, Release/открыть = -1, None = 0.
+        sensor.AddObservation(EncodeGripperCommandObservation(
+            (RobotGripperCommand)previousGripCommand));
+
+        // Active perception: append the current shared camera/ultrasonic pan
+        // direction and previous absolute target after the legacy 13 values.
+        bool hasCameraPanState = TryGetSelectedCameraPanState(out float currentCameraPan);
+        sensor.AddObservation(hasCameraPanState ? currentCameraPan : 0f);
+        sensor.AddObservation(previousCameraPanTarget);
+    }
+
+    private static float EncodeGripperCommandObservation(RobotGripperCommand command)
+    {
+        return command switch
+        {
+            RobotGripperCommand.Grab => 1f,
+            RobotGripperCommand.Release => -1f,
+            _ => 0f
+        };
+    }
+
+    public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
+    {
+        bool hasGripperState = TryGetSelectedGripperState(out bool isGripperOpen);
+        bool hasSensorData = TryGetSelectedRangeSensors(
+            out _,
+            out _,
+            out _,
+            out bool gripperIrTriggered);
+
+        GripperController simulationGripper = !useRealRobotIo
+            ? gripperTransform?.GetComponent<GripperController>()
+            : null;
+        bool targetInTrigger = simulationGripper != null &&
+            simulationGripper.HasTargetInTrigger;
+
+        bool canGrab = hasGripperState &&
+            isGripperOpen &&
+            ((hasSensorData && gripperIrTriggered) || targetInTrigger);
+        bool canRelease = hasGripperState && !isGripperOpen;
+
+        actionMask.SetActionEnabled(
+            branch: 0,
+            actionIndex: (int)RobotGripperCommand.Grab,
+            isEnabled: canGrab);
+        actionMask.SetActionEnabled(
+            branch: 0,
+            actionIndex: (int)RobotGripperCommand.Release,
+            isEnabled: canRelease);
     }
 
     // ==================== ПРИНЯТИЕ РЕШЕНИЙ ====================
@@ -787,10 +953,25 @@ public class RobotBrain : Agent
         // Извлечение действий
         float gas = Mathf.Clamp(actions.ContinuousActions[0], -1f, 1f);
         float steer = Mathf.Clamp(actions.ContinuousActions[1], -1f, 1f);
+        float cameraPanTarget = Mathf.Clamp(actions.ContinuousActions[2], -1f, 1f);
         RobotGripperCommand gripCommand = (RobotGripperCommand)Mathf.Clamp(
             actions.DiscreteActions[0],
             (int)RobotGripperCommand.None,
             (int)RobotGripperCommand.Release);
+
+        // DecisionRequester повторяет последнее действие между решениями. Команды
+        // сервопривода трактуем как события перехода, а не как команду на каждом
+        // физическом шаге — это совпадает с поведением реального ROS-драйвера.
+        RobotGripperCommand appliedGripCommand = RobotGripperCommand.None;
+        if (gripCommand == RobotGripperCommand.None)
+        {
+            lastAppliedGripCommand = RobotGripperCommand.None;
+        }
+        else if (gripCommand != lastAppliedGripCommand)
+        {
+            appliedGripCommand = gripCommand;
+            lastAppliedGripCommand = gripCommand;
+        }
 
         // Применяем клиппинг газа с учётом maxLinearCmd (как в TrackController)
         float maxLinearCommand = trackController != null
@@ -802,6 +983,21 @@ public class RobotBrain : Agent
         float normalizedLinear = maxLinearCommand > Mathf.Epsilon
             ? clampedGas / maxLinearCommand
             : 0f;
+
+        bool targetInTrigger = false;
+        bool gripperIrTriggered = false;
+        bool gripperOpenBeforeCommand = false;
+        if (logGripperInferenceDebug)
+        {
+            GripperController simulationGripper = gripperTransform?.GetComponent<GripperController>();
+            targetInTrigger = !useRealRobotIo &&
+                simulationGripper != null &&
+                simulationGripper.HasTargetInTrigger;
+            gripperIrTriggered = !useRealRobotIo &&
+                sensors != null &&
+                sensors.GetGripperIR() > 0.5f;
+            TryGetSelectedGripperState(out gripperOpenBeforeCommand);
+        }
 
         // Задержка команд: кладём свежее действие в очередь и берём то, что было
         // отправлено currentActionLatencySteps шагов назад — имитирует связь с
@@ -817,9 +1013,36 @@ public class RobotBrain : Agent
             appliedSteer = delayedAction[1];
         }
 
-        var robotCommand = new RobotCommand(appliedLinear, appliedSteer, gripCommand);
+        var robotCommand = new RobotCommand(
+            appliedLinear,
+            appliedSteer,
+            cameraPanTarget,
+            appliedGripCommand);
         RobotCommandResult commandResult = GetSelectedCommandSink()?.ApplyCommand(robotCommand)
             ?? RobotCommandResult.Unavailable;
+
+        bool hasCameraPanState = TryGetSelectedCameraPanState(out float currentCameraPan);
+        if (hasCameraPanState)
+        {
+            cameraPanCurrentSum += currentCameraPan;
+            cameraPanTargetSum += cameraPanTarget;
+            cameraPanMovementSum += Mathf.Abs(currentCameraPan - previousMeasuredCameraPan);
+            cameraPanSampleCount++;
+            if (Mathf.Abs(currentCameraPan) >= 0.98f)
+                cameraPanAtLimitCount++;
+            previousMeasuredCameraPan = currentCameraPan;
+        }
+
+        if (logGripperInferenceDebug)
+        {
+            LogGripperInferenceState(
+                gripCommand,
+                appliedGripCommand,
+                commandResult,
+                gripperOpenBeforeCommand,
+                targetInTrigger,
+                gripperIrTriggered);
+        }
 
         // ---------- НАГРАДЫ И ШТРАФЫ (каждый шаг) ----------
 
@@ -933,6 +1156,7 @@ public class RobotBrain : Agent
         // ---------- СОХРАНЯЕМ ТЕКУЩИЕ ДЕЙСТВИЯ КАК ПРЕДЫДУЩИЕ ДЛЯ СЛЕДУЮЩЕГО ШАГА ----------
         prevGas = clampedGas;
         prevSteer = clampedSteer;
+        previousCameraPanTarget = cameraPanTarget;
         previousGripCommand = (int)gripCommand;
 
         // ---------- ДИАГНОСТИЧЕСКОЕ ЛОГИРОВАНИЕ (Sim-to-Real) ----------
@@ -949,7 +1173,7 @@ public class RobotBrain : Agent
                 StepCount, arenaIndex,
                 targetVisible, lastKnownAngle, lastDistanceToBall,
                 diagUltrasonic, diagLeftIr ? 1 : 0, diagRightIr ? 1 : 0, Mathf.RoundToInt(diagGripperIr),
-                0f, // camYaw: в этом проекте нет отдельного привода поворота камеры
+                cameraPanTarget,
                 clampedGas, clampedSteer, commandResult.IsGrabbing,
                 rb.position.x - startPos.x, rb.position.z - startPos.z,
                 transform.eulerAngles.y / 360f, rb.linearVelocity.magnitude);
@@ -1017,6 +1241,54 @@ public class RobotBrain : Agent
         nextCollisionPenaltyTime = Time.fixedTime + collisionPenaltyCooldown;
     }
 
+    private void LogGripperInferenceState(
+        RobotGripperCommand gripCommand,
+        RobotGripperCommand appliedGripCommand,
+        RobotCommandResult commandResult,
+        bool gripperOpenBeforeCommand,
+        bool targetInTrigger,
+        bool gripperIrTriggered)
+    {
+        if (!logGripperInferenceDebug)
+            return;
+
+        bool stateChanged = !hasGripperDebugSnapshot ||
+            gripCommand != lastDebugGripCommand ||
+            appliedGripCommand != lastDebugAppliedGripCommand ||
+            commandResult.GripAttempt != lastDebugGripAttempt ||
+            targetInTrigger != lastDebugTargetInTrigger ||
+            gripperIrTriggered != lastDebugGripperIr ||
+            commandResult.IsGripperOpen != lastDebugIsOpen ||
+            commandResult.IsGrabbing != lastDebugIsGrabbing;
+
+        if (!stateChanged)
+            return;
+
+        float distanceToBall = ball != null && holdPoint != null
+            ? Vector3.Distance(holdPoint.position, ball.position)
+            : -1f;
+
+        Debug.Log(
+            $"[GripInference] agent={name}#{GetEntityId()} step={episodeStepCounter} " +
+            $"action={gripCommand} applied={appliedGripCommand} " +
+            $"trigger={(targetInTrigger ? 1 : 0)} " +
+            $"ir={(gripperIrTriggered ? 1 : 0)} distance={distanceToBall:F3} " +
+            $"openBefore={(gripperOpenBeforeCommand ? 1 : 0)} " +
+            $"openAfter={(commandResult.IsGripperOpen ? 1 : 0)} " +
+            $"grabbing={(commandResult.IsGrabbing ? 1 : 0)} " +
+            $"attempt={commandResult.GripAttempt}",
+            this);
+
+        hasGripperDebugSnapshot = true;
+        lastDebugGripCommand = gripCommand;
+        lastDebugAppliedGripCommand = appliedGripCommand;
+        lastDebugGripAttempt = commandResult.GripAttempt;
+        lastDebugTargetInTrigger = targetInTrigger;
+        lastDebugGripperIr = gripperIrTriggered;
+        lastDebugIsOpen = commandResult.IsGripperOpen;
+        lastDebugIsGrabbing = commandResult.IsGrabbing;
+    }
+
     // ==================== ЭВРИСТИЧЕСКИЙ РЕЖИМ ====================
 
     public override void Heuristic(in ActionBuffers actionsOut)
@@ -1033,6 +1305,11 @@ public class RobotBrain : Agent
         if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) steer -= 1f;
         if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) steer += 1f;
 
+        const float heuristicPanStep = 0.1f;
+        if (keyboard.qKey.isPressed) heuristicCameraPanTarget -= heuristicPanStep;
+        if (keyboard.eKey.isPressed) heuristicCameraPanTarget += heuristicPanStep;
+        heuristicCameraPanTarget = Mathf.Clamp(heuristicCameraPanTarget, -1f, 1f);
+
         // Клиппинг для соответствия с OnActionReceived
         float clampedGas = Mathf.Clamp(gas, -trackController.maxLinearCmd, trackController.maxLinearCmd);
         float clampedSteer = Mathf.Clamp(steer, -1f, 1f);
@@ -1041,17 +1318,16 @@ public class RobotBrain : Agent
         var discreteActions = actionsOut.DiscreteActions;
         continuousActions[0] = clampedGas;
         continuousActions[1] = clampedSteer;
+        continuousActions[2] = heuristicCameraPanTarget;
 
-        int gripCommand = 0;
-        if (keyboard.gKey.wasPressedThisFrame)
-            gripCommand = 1;
-        else if (keyboard.rKey.wasPressedThisFrame)
-            gripCommand = 2;
+        int gripCommand = (int)pendingHeuristicGripCommand;
         discreteActions[0] = gripCommand;
+        pendingHeuristicGripCommand = RobotGripperCommand.None;
 
         // Обновляем историю для согласованности наблюдений в эвристическом режиме
         prevGas = clampedGas;
         prevSteer = clampedSteer;
+        previousCameraPanTarget = heuristicCameraPanTarget;
         previousGripCommand = gripCommand;
     }
 
@@ -1097,5 +1373,17 @@ public class RobotBrain : Agent
         statsRecorder.Add("Camera/Measurements", cameraMeasurementCount);
         statsRecorder.Add("Camera/TargetAcquired", targetAcquiredCount);
         statsRecorder.Add("Camera/TargetLost", targetLostCount);
+        statsRecorder.Add(
+            "CameraPan/Current",
+            cameraPanSampleCount > 0 ? cameraPanCurrentSum / cameraPanSampleCount : 0f);
+        statsRecorder.Add(
+            "CameraPan/Target",
+            cameraPanSampleCount > 0 ? cameraPanTargetSum / cameraPanSampleCount : 0f);
+        statsRecorder.Add("CameraPan/Movement", cameraPanMovementSum);
+        statsRecorder.Add(
+            "CameraPan/AtLimitFraction",
+            cameraPanSampleCount > 0
+                ? (float)cameraPanAtLimitCount / cameraPanSampleCount
+                : 0f);
     }
 }

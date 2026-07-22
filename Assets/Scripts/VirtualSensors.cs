@@ -13,10 +13,15 @@ public class VirtualSensors : MonoBehaviour
     [Min(0f)] public float irDistance = 2.4f;
     [Tooltip("Дальность центрального ИК-датчика, перенесённого на захват.")]
     [Min(0f)] public float gripperDistance = 0.7f;
+    [Tooltip("Максимальная дальность УЗ в Unity units. При выдаче наблюдения переводится в метры через EnvironmentManager.globalScale.")]
     public float ultrasonicMaxDistance = 50f;
+    [Tooltip("Unity units на метр для сцен без EnvironmentManager, например SensorTest.")]
+    [Min(0.01f)] public float fallbackWorldUnitsPerMeter = 10f;
     public int ultrasonicRayCount = 10;
     public float ultrasonicAngle = 45f;
     public LayerMask obstacleLayer;
+    [Tooltip("Слои, которые обнаруживает ИК-датчик на захвате. По умолчанию — TargetBall.")]
+    public LayerMask gripperDetectionMask;
 
     [Header("Domain Randomization (крепление датчиков)")]
     [Tooltip("Рандомизировать положение/угол точек датчиков каждый эпизод — имитирует разброс при сборке/креплении на реальном роботе")]
@@ -37,6 +42,8 @@ public class VirtualSensors : MonoBehaviour
         TrainingConfig.ApplyOverrides(this, "VirtualSensors");
         if (obstacleLayer == 0)
             obstacleLayer = LayerMask.GetMask("Obstacle");
+        if (gripperDetectionMask == 0)
+            gripperDetectionMask = LayerMask.GetMask("TargetBall");
         robotBrain = GetComponent<RobotBrain>();
     }
 
@@ -105,20 +112,22 @@ public class VirtualSensors : MonoBehaviour
     public float GetLeftIR() => CastRay(leftIRPoint, irDistance) ? 1f : 0f;
     public float GetRightIR() => CastRay(rightIRPoint, irDistance) ? 1f : 0f;
     public float GetCenterIR() => GetGripperIR();
-    public float GetGripperIR() => CastRay(gripperIRPoint, gripperDistance) ? 1f : 0f;
+    public float GetGripperIR() => CastRay(gripperIRPoint, gripperDistance, gripperDetectionMask) ? 1f : 0f;
 
     /// <summary>
-    /// Возвращает сырое расстояние до ближайшего препятствия в метрах (без нормализации).
+    /// Возвращает расстояние до ближайшего препятствия в физических метрах
+    /// (без нормализации для policy).
     /// Используется для наблюдений агента.
     /// </summary>
     public float GetUltrasonicDistance()
     {
-        return GetUltrasonicMinDistance();
+        return GetUltrasonicMinDistanceMeters();
     }
 
-    private float GetUltrasonicMinDistance()
+    private float GetUltrasonicMinDistanceMeters()
     {
-        if (ultrasonicPoint == null) return ultrasonicMaxDistance;
+        float worldUnitsPerMeter = GetWorldUnitsPerMeter();
+        if (ultrasonicPoint == null) return ultrasonicMaxDistance / worldUnitsPerMeter;
         Vector3 origin = ultrasonicPoint.position;
         Vector3 forward = ultrasonicPoint.forward;
         Vector3 up = ultrasonicPoint.up;
@@ -137,7 +146,17 @@ public class VirtualSensors : MonoBehaviour
                     minDist = hit.distance;
             }
         }
-        return minDist;
+        return minDist / worldUnitsPerMeter;
+    }
+
+    private float GetWorldUnitsPerMeter()
+    {
+        EnvironmentManager environment = robotBrain != null
+            ? robotBrain.environmentManager
+            : null;
+        return environment != null
+            ? Mathf.Max(Mathf.Epsilon, environment.globalScale)
+            : Mathf.Max(0.01f, fallbackWorldUnitsPerMeter);
     }
 
     public bool TryReadSimulationSensors(
@@ -151,17 +170,22 @@ public class VirtualSensors : MonoBehaviour
             rightIRPoint != null ||
             gripperIRPoint != null;
 
-        ultrasonicMeters = GetUltrasonicMinDistance();
+        ultrasonicMeters = GetUltrasonicMinDistanceMeters();
         leftIrTriggered = CastRay(leftIRPoint, irDistance);
-        gripperMountedIrTriggered = CastRay(gripperIRPoint, gripperDistance);
+        gripperMountedIrTriggered = CastRay(gripperIRPoint, gripperDistance, gripperDetectionMask);
         rightIrTriggered = CastRay(rightIRPoint, irDistance);
         return hasSensorPoints;
     }
 
     private bool CastRay(Transform point, float maxDistance)
     {
+        return CastRay(point, maxDistance, obstacleLayer);
+    }
+
+    private static bool CastRay(Transform point, float maxDistance, LayerMask layerMask)
+    {
         if (point == null) return false;
-        return Physics.Raycast(point.position, point.forward, maxDistance, obstacleLayer);
+        return Physics.Raycast(point.position, point.forward, maxDistance, layerMask);
     }
 
     // === Визуализация в редакторе (Gizmos) ===
@@ -170,16 +194,21 @@ public class VirtualSensors : MonoBehaviour
     {
         DrawGizmosRay(leftIRPoint, irDistance);
         DrawGizmosRay(rightIRPoint, irDistance);
-        DrawGizmosRay(gripperIRPoint, gripperDistance);
+        DrawGizmosRay(gripperIRPoint, gripperDistance, gripperDetectionMask);
         DrawGizmosUltrasonic(ultrasonicPoint, ultrasonicMaxDistance);
     }
 
     private void DrawGizmosRay(Transform point, float maxDistance)
     {
+        DrawGizmosRay(point, maxDistance, obstacleLayer);
+    }
+
+    private static void DrawGizmosRay(Transform point, float maxDistance, LayerMask layerMask)
+    {
         if (point == null) return;
         Vector3 origin = point.position;
         Vector3 direction = point.forward;
-        bool isHit = Physics.Raycast(origin, direction, out RaycastHit hit, maxDistance, obstacleLayer);
+        bool isHit = Physics.Raycast(origin, direction, out RaycastHit hit, maxDistance, layerMask);
         Gizmos.color = isHit ? Color.red : Color.white;
         Gizmos.DrawRay(origin, direction * maxDistance);
         if (isHit)
@@ -226,14 +255,19 @@ public class VirtualSensors : MonoBehaviour
 
         DrawDebugRay(leftIRPoint, irDistance);
         DrawDebugRay(rightIRPoint, irDistance);
-        DrawDebugRay(gripperIRPoint, gripperDistance);
+        DrawDebugRay(gripperIRPoint, gripperDistance, gripperDetectionMask);
         DrawDebugUltrasonic(ultrasonicPoint, ultrasonicMaxDistance);
     }
 
     private void DrawDebugRay(Transform point, float maxDistance)
     {
+        DrawDebugRay(point, maxDistance, obstacleLayer);
+    }
+
+    private static void DrawDebugRay(Transform point, float maxDistance, LayerMask layerMask)
+    {
         if (point == null) return;
-        bool isHit = Physics.Raycast(point.position, point.forward, out RaycastHit hit, maxDistance, obstacleLayer);
+        bool isHit = Physics.Raycast(point.position, point.forward, out RaycastHit hit, maxDistance, layerMask);
         Color rayColor = isHit ? Color.red : Color.white;
         Debug.DrawRay(point.position, point.forward * maxDistance, rayColor);
     }

@@ -46,7 +46,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cc4890a209e472478328239e355071f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraRotator
-  angle: 90
+  targetAngle: 90
+  maxSpeedDegreesPerSecond: 140
+  commandDeadbandDegrees: 0.5
 --- !u!1 &882274230855580237
 GameObject:
   m_ObjectHideFlags: 0
@@ -2053,10 +2055,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 13
+    VectorObservationSize: 15
     NumStackedVectorObservations: 5
     m_ActionSpec:
-      m_NumContinuousActions: 2
+      m_NumContinuousActions: 3
       BranchSizes: 03000000
     VectorActionSize: 
     VectorActionDescriptions: []
@@ -2064,7 +2066,7 @@ MonoBehaviour:
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 0
+  m_BehaviorType: 1
   m_BehaviorName: GFSX_Brain
   TeamId: 0
   m_UseChildSensors: 1
@@ -2096,6 +2098,9 @@ MonoBehaviour:
   obstacleLayer:
     serializedVersion: 2
     m_Bits: 256
+  gripperDetectionMask:
+    serializedVersion: 2
+    m_Bits: 128
 --- !u!114 &7030976407208146201
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2115,10 +2120,13 @@ MonoBehaviour:
   trackController: {fileID: 8335060464554520475}
   sensors: {fileID: 6916653849270676248}
   yoloCamera: {fileID: 5025208088392879304}
+  cameraRotator: {fileID: 354141265629359955}
   gripperTransform: {fileID: 1541136260898994232}
   holdPoint: {fileID: 173896788625270242}
   ball: {fileID: 0}
   useRealRobotIo: 0
+  ultrasonicObservationMaxMeters: 5
+  logGripperInferenceDebug: 0
   environmentManager: {fileID: 0}
   regenerateEveryEpisodes: 1
   wallPenalty: -0.05
@@ -2154,6 +2162,7 @@ MonoBehaviour:
   irFaultProbability: 0.1
   enableUltrasonicFaults: 1
   ultrasonicFaultProbability: 0.15
+  randomizeCameraPanOnEpisodeBegin: 1
 --- !u!114 &6858763683480034541
 MonoBehaviour:
   m_ObjectHideFlags: 0

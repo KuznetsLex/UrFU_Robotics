@@ -82,7 +82,9 @@ public class GripperController : MonoBehaviour
         }
         else
         {
-            // Мяч не найден – просто закрываем клешню без захвата
+            // Реальный привод закрывает клешню независимо от наличия мяча. Повторяем
+            // это поведение в симуляции; маска действий в RobotBrain предотвращает
+            // заведомо ранние команды политики.
             CloseWithoutGrab();
             return false;
         }
@@ -208,4 +210,5 @@ public class GripperController : MonoBehaviour
     // ========== СВОЙСТВА ДЛЯ ВНЕШНЕГО ДОСТУПА ==========
     public bool IsGrabbing => isGrabbing;
     public bool IsOpen => isOpen;
+    public bool HasTargetInTrigger => ballInTrigger != null;
 }

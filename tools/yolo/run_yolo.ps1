@@ -37,8 +37,12 @@ if (-not (Test-Path -LiteralPath $python)) {
     }
 }
 
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $python -c "import cv2, onnxruntime" 2>$null
-if ($LASTEXITCODE -ne 0) {
+$dependenciesReady = $LASTEXITCODE -eq 0
+$ErrorActionPreference = $previousErrorActionPreference
+if (-not $dependenciesReady) {
     Write-Host "Installing YOLO dependencies (first launch only)..."
     & $python -m pip install --upgrade pip
     if ($LASTEXITCODE -ne 0) { throw "Failed to upgrade pip in the YOLO environment." }

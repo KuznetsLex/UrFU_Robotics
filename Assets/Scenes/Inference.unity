@@ -166,14 +166,14 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 54dbdb2ff48c233408a417605197a4cf, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::EnvironmentManager
-  robot: {fileID: 2001394585}
-  targetBall: {fileID: 443588116}
+  robot: {fileID: 0}
+  targetBall: {fileID: 0}
   boxPrefab: {fileID: 5426988745256519477, guid: 78d101b4f88f740408d93593304eed40, type: 3}
   globalScale: 10
   baseArenaSize: {x: 3, y: 6}
-  boxCount: 10
+  boxCount: 5
   baseSafeRadius: 0.3
   scatterMargin: 0.5
   obstacleMask:
@@ -183,7 +183,6 @@ MonoBehaviour:
   createWalls: 1
   visibleWalls: 1
   baseWallHeight: 0.5
-  wallColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &555000121
 GameObject:
   m_ObjectHideFlags: 0
@@ -226,7 +225,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 24430e11fbe846a8b4165e5bb41586ca, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::TrainingCameraController
   targetCamera: {fileID: 0}
   zoomSpeed: 40
@@ -263,14 +262,14 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 11ade5f508fa41a9ac163bec8c00054e, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::ArenaSpawner
   arenaTemplate:
   - {fileID: 2001394585}
   - {fileID: 443588116}
   - {fileID: 555000112}
   floorMargin: 1.2
-  arenaCount: 30
+  arenaCount: 1
   spacing: 100
   arenasPerRow: 4
 --- !u!4 &1069484985
@@ -288,33 +287,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1367852722 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-  m_PrefabInstance: {fileID: 4372044676883856589}
-  m_PrefabAsset: {fileID: 0}
 --- !u!4 &2001394585 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
   m_PrefabInstance: {fileID: 4372044676883856589}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &2001394594
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1367852722}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 73a056e249f8d4afaadc6de505e6d08d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DiagnosticLogger
-  enableLogging: 0
-  logEveryN: 1
-  maxRows: 2000
-  flushEveryNRows: 20
-  flushEverySeconds: 2
 --- !u!1001 &3228754067649016818
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -478,12 +455,16 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: ball
-      value: 
-      objectReference: {fileID: 443588116}
-    - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: MaxStep
-      value: 10000
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: isTraining
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: useRealRobotIo
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: stepPenalty
@@ -510,17 +491,17 @@ PrefabInstance:
       value: 0.3
       objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: environmentManager
-      value: 
-      objectReference: {fileID: 555000113}
-    - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: regenerateEveryEpisodes
-      value: 3
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_BehaviorType
-      value: 0
+      value: 2
       objectReference: {fileID: 0}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Model
+      value:
+      objectReference: {fileID: 11400000, guid: 700dcbe4dfe44e8b9fcd40c8a874588c, type: 3}
     - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_BrainParameters.VectorObservationSize
       value: 15
@@ -548,10 +529,7 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 2001394594}
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
 --- !u!1001 &6736962765603667905
 PrefabInstance:
