@@ -181,12 +181,12 @@ def main() -> int:
             "robot startup requires an actual /sensor/data message")
 
     expected_pose = {
-        "ANGLE_DRIVE_BASE": 90,
-        "ANGLE_DRIVE_SHOULDER": 150,
+        "ANGLE_DRIVE_BASE": 40,
+        "ANGLE_DRIVE_SHOULDER": 166,
         "ANGLE_DRIVE_ELBOW": 90,
         "ANGLE_DRIVE_CAMERA": 90,
         "ANGLE_CLAW_OPEN": 50,
-        "ANGLE_CLAW_CLOSED": 89,
+        "ANGLE_CLAW_CLOSED": 83,
     }
     for name, value in expected_pose.items():
         require(re.search(rf"^{name} = {value}$", robot, re.MULTILINE) is not None,

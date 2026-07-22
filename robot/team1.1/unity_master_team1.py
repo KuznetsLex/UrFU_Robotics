@@ -307,12 +307,12 @@ SERVO_CAMERA_PAN = SERVO_CAMERA_PAN_CHANNEL
 
 # Single robot-side source of truth for the persistent driving pose. Unity does
 # not resend these calibrated angles while the robot drives.
-ANGLE_DRIVE_BASE = 90
-ANGLE_DRIVE_SHOULDER = 150
+ANGLE_DRIVE_BASE = 40
+ANGLE_DRIVE_SHOULDER = 166
 ANGLE_DRIVE_ELBOW = 90
 ANGLE_DRIVE_CAMERA = 90
 ANGLE_CLAW_OPEN = 50
-ANGLE_CLAW_CLOSED = 89
+ANGLE_CLAW_CLOSED = 83
 
 CAMERA_PAN_MIN = 20
 CAMERA_PAN_MAX = 160
