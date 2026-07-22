@@ -397,6 +397,32 @@ public class RobotBrain : Agent
             ballStartPos = newBallPos;
         }
 
+        // НОВЫЙ БЛОК: РАНДОМИЗАЦИЯ ФИЗИКИ =====
+        if (isTraining && !useRealRobotIo)
+        {
+            if (rb != null)
+                rb.mass = Random.Range(2.0f, 5.0f);
+
+            if (trackController != null)
+            {
+                // Сила тяги – теперь 100–300 Н (достаточно для разгона)
+                trackController.maxMotorForce = Random.Range(100f, 300f);
+                // Сцепление – 0.8–2.0 (гарантирует, что сила не будет обрезана слишком сильно)
+                trackController.frictionCoeff = Random.Range(0.8f, 2.0f);
+                // Сопротивление – оставляем 0.3–1.0 (но если робот слишком быстро тормозит, можно уменьшить)
+                trackController.dragCoeff = Random.Range(0.3f, 1.0f);
+                // Сопротивление вращению – 0.5–2.0
+                trackController.angularDragCoeff = Random.Range(0.5f, 2.0f);
+                // Чувствительность поворота – 0.2–0.4
+                trackController.turnK = Random.Range(0.2f, 0.4f);
+                // EMA – 0.3–0.6
+                trackController.emaSteer = Random.Range(0.3f, 0.6f);
+                // Ограничение газа – 0.5–1.0 (чтобы не резать слишком сильно)
+                trackController.maxLinearCmd = Random.Range(0.5f, 1.0f);
+                
+            }
+        }
+
         // Сброс статистики
         rewardSumDict.Clear();
         rewardCountDict.Clear();
@@ -724,7 +750,7 @@ public class RobotBrain : Agent
         }
 
         // 9. Долгая потеря цели – штраф и прерывание
-        bool isInGrabZone = gripper != null && ball != null && holdPoint != null && 
+        bool isInGrabZone = gripper != null && ball != null && holdPoint != null &&
                             Vector3.Distance(holdPoint.position, ball.position) < grabZoneRadius;
         if (!isInGrabZone && stepsSinceLastDetection > noDetectionSteps)
         {

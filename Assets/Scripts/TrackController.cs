@@ -13,10 +13,11 @@ public class TrackController : MonoBehaviour
     public float frictionCoeff = 0.8f;       // сцепление с поверхностью
     public float dragCoeff = 0.5f;           // сопротивление движению
     public float angularDragCoeff = 1.0f;    // сопротивление вращению
+    public float maxAngularSpeed = 180f;     // максимальная угловая скорость (градусы/с)
 
     [Header("Track Points (local positions)")]
-    public Vector3 leftTrackOffset = new Vector3(-1.5f, 0f, 0f);   // смещение левой гусеницы от центра
-    public Vector3 rightTrackOffset = new Vector3(1.5f, 0f, 0f);   // смещение правой гусеницы от центра
+    public Vector3 leftTrackOffset = new Vector3(-1.5f, 0f, 0f);
+    public Vector3 rightTrackOffset = new Vector3(1.5f, 0f, 0f);
 
     [Header("Randomization (для обучения)")]
     public bool randomizeFriction = false;
@@ -27,12 +28,15 @@ public class TrackController : MonoBehaviour
     private float currentSteer;
     private float filteredSteer = 0f;
     private float currentFrictionCoeff;
+    private float logTimer = 0f;
+    private float maxAngularRad; // кешированное значение в радианах
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
         if (rb == null) Debug.LogError("TrackController: Rigidbody missing!");
         ApplyFrictionRandomization();
+        maxAngularRad = maxAngularSpeed * Mathf.Deg2Rad;
     }
 
     private void Start()
@@ -41,9 +45,9 @@ public class TrackController : MonoBehaviour
         rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
         rb.linearDamping = 0f;
         rb.angularDamping = 0f;
-        rb.constraints |= RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
-        // Центр масс оставляем по умолчанию, но можно сместить для устойчивости
         rb.centerOfMass = new Vector3(0, -0.2f, 0);
+        // Если нужно запретить наклон – раскомментируйте:
+        // rb.constraints |= RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
     }
 
     public void Move(float gas, float steer)
@@ -84,10 +88,10 @@ public class TrackController : MonoBehaviour
         float ang_z = filteredSteer;
 
         // 3. Дифференциальный привод – команды для гусениц
-        float cmdLeft  = lin_x + ang_z * turnK;
+        float cmdLeft = lin_x + ang_z * turnK;
         float cmdRight = lin_x - ang_z * turnK;
-        
-        // 4. Желаемые силы для каждой гусеницы (без ограничения по трению, пока)
+
+        // 4. Желаемые силы для каждой гусеницы
         float desiredForceLeft = cmdLeft * maxMotorForce;
         float desiredForceRight = cmdRight * maxMotorForce;
 
@@ -98,7 +102,6 @@ public class TrackController : MonoBehaviour
 
         float actualForceLeft = Mathf.Clamp(desiredForceLeft, -maxFrictionForce, maxFrictionForce);
         float actualForceRight = Mathf.Clamp(desiredForceRight, -maxFrictionForce, maxFrictionForce);
-        Debug.Log($"ForceLeft={actualForceLeft}, ForceRight={actualForceRight}");
 
         // 6. Вычисляем мировые точки приложения сил
         Vector3 leftWorld = transform.TransformPoint(leftTrackOffset);
@@ -117,10 +120,20 @@ public class TrackController : MonoBehaviour
         {
             rb.AddForce(-rb.linearVelocity * (dragCoeff * 1.5f));
         }
-        
-        // Отладка (опционально)
-        Debug.DrawRay(leftWorld, transform.forward * (actualForceLeft / 10f), Color.cyan);
-        Debug.DrawRay(rightWorld, transform.forward * (actualForceRight / 10f), Color.magenta);
-        Debug.DrawRay(rb.position, rb.linearVelocity.normalized * 1f, Color.green);
+
+        // ===== ОГРАНИЧЕНИЕ МАКСИМАЛЬНОЙ УГЛОВОЙ СКОРОСТИ =====
+        Vector3 angularVel = rb.angularVelocity;
+        angularVel.y = Mathf.Clamp(angularVel.y, -maxAngularRad, maxAngularRad);
+        rb.angularVelocity = angularVel;
+
+        // 10. Логирование скоростей (каждые 0.5 секунды)
+        logTimer += Time.fixedDeltaTime;
+        if (logTimer >= 0.5f)
+        {
+            logTimer = 0f;
+            float linearSpeed = rb.linearVelocity.magnitude;
+            float angularSpeed = rb.angularVelocity.magnitude * Mathf.Rad2Deg;
+            Debug.Log($"Linear speed: {linearSpeed:F2} m/s, Angular speed: {angularSpeed:F2} deg/s");
+        }
     }
 }
