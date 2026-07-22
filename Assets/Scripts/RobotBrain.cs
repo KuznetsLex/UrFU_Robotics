@@ -910,28 +910,18 @@ public class RobotBrain : Agent
 
     public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        bool hasGripperState = TryGetSelectedGripperState(out bool isGripperOpen);
-        bool hasSensorData = TryGetSelectedRangeSensors(
-            out _,
-            out _,
-            out _,
-            out bool gripperIrTriggered);
-
-        GripperController simulationGripper = !useRealRobotIo
-            ? gripperTransform?.GetComponent<GripperController>()
-            : null;
-        bool targetInTrigger = simulationGripper != null &&
-            simulationGripper.HasTargetInTrigger;
-
-        bool canGrab = hasGripperState &&
-            isGripperOpen &&
-            ((hasSensorData && gripperIrTriggered) || targetInTrigger);
-        bool canRelease = hasGripperState && !isGripperOpen;
-
+        // Grab больше не выбор политики ни при каких условиях — захват происходит
+        // только рефлекторно, по гриппер-ИК (см. OnActionReceived). Действие
+        // остаётся в пространстве действий (не меняем размер branch), но агенту
+        // недоступно постоянно.
         actionMask.SetActionEnabled(
             branch: 0,
             actionIndex: (int)RobotGripperCommand.Grab,
-            isEnabled: canGrab);
+            isEnabled: false);
+
+        bool hasGripperState = TryGetSelectedGripperState(out bool isGripperOpen);
+        bool canRelease = hasGripperState && !isGripperOpen;
+
         actionMask.SetActionEnabled(
             branch: 0,
             actionIndex: (int)RobotGripperCommand.Release,
@@ -958,6 +948,33 @@ public class RobotBrain : Agent
             actions.DiscreteActions[0],
             (int)RobotGripperCommand.None,
             (int)RobotGripperCommand.Release);
+
+        // Grab у политики замаскирован в WriteDiscreteActionMask, но на случай
+        // ручного/эвристического ввода (не проходит через маску) всё равно
+        // трактуем его как None — единственный источник Grab ниже.
+        if (gripCommand == RobotGripperCommand.Grab)
+            gripCommand = RobotGripperCommand.None;
+
+        // Рефлекторный захват по гриппер-ИК — единственный способ закрыть
+        // клешню на мяче, политика в этом решении не участвует. Источник
+        // датчика (симуляция/реальный робот) определяется тем же способом,
+        // что и в WriteDiscreteActionMask. HasTargetInTrigger — тот же
+        // резервный физический триггер, что раньше учитывался в маске
+        // действий, на случай если IR-слой мяч не поймает.
+        if (gripCommand == RobotGripperCommand.None &&
+            TryGetSelectedGripperState(out bool isGripperOpenNow) && isGripperOpenNow)
+        {
+            bool gripperIrTriggeredNow = TryGetSelectedRangeSensors(
+                out _, out _, out _, out bool irTriggered) && irTriggered;
+
+            bool targetInTriggerNow = !useRealRobotIo &&
+                gripperTransform != null &&
+                gripperTransform.TryGetComponent(out GripperController simulationGripperNow) &&
+                simulationGripperNow.HasTargetInTrigger;
+
+            if (gripperIrTriggeredNow || targetInTriggerNow)
+                gripCommand = RobotGripperCommand.Grab;
+        }
 
         // DecisionRequester повторяет последнее действие между решениями. Команды
         // сервопривода трактуем как события перехода, а не как команду на каждом
