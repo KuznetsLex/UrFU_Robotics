@@ -16,8 +16,8 @@
     # PNG-картинки (по умолчанию):
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain
 
-    # Отдельный "run" в самом TensorBoard (карточка "RewardsByEpisode"),
-    # пишется в results/small_input_rand_ball_fix/by_episode:
+    # Новая карточка "RewardsByEpisode" в TensorBoard — пишется прямо в run_dir,
+    # в тот же run, что и обычные Rewards/* (по шагам):
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain --mode tensorboard
 
     # То же самое, но в фоне, пока идёт обучение: пересчитывает и перезаписывает
@@ -26,8 +26,8 @@
 """
 
 import argparse
+import glob
 import os
-import shutil
 import time
 
 import numpy as np
@@ -37,6 +37,10 @@ EPISODE_LENGTH_TAG = "Environment/Episode Length"
 REWARDS_PREFIX = "Rewards/"
 SKIP_TAGS = {"Rewards/EpisodeLength"}
 TB_NEW_PREFIX = "RewardsByEpisode/"
+# Суффикс наших собственных event-файлов, когда пишем в тот же run, что и
+# обычные Rewards/* по шагам — по нему отличаем "свои" файлы от настоящих
+# файлов обучения при очистке перед перезаписью (см. write_tensorboard).
+BY_EPISODE_SUFFIX = ".by_episode"
 
 
 def load_scalars(run_dir):
@@ -97,14 +101,17 @@ def write_png(run_dir, out_dir, scalars, ep_steps, cumulative_episodes, reward_t
 def write_tensorboard(out_dir, scalars, ep_steps, cumulative_episodes, reward_tags):
     from torch.utils.tensorboard import SummaryWriter
 
-    # out_dir полностью генерируется этим скриптом, поэтому безопасно
-    # перезаписывать его целиком при каждом запуске (иначе накопятся
-    # дублирующиеся точки из старых event-файлов).
-    if os.path.exists(out_dir):
-        shutil.rmtree(out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    writer = SummaryWriter(log_dir=out_dir)
+    # out_dir теперь по умолчанию — это тот же run_dir, где лежат настоящие
+    # чекпоинты и tfevents самого обучения, поэтому rmtree() всей папки, как
+    # раньше, недопустим — удалит чужие файлы. Чистим только файлы, которые
+    # сами же создали на прошлых итерациях (отличаем по уникальному суффиксу),
+    # иначе накопятся дублирующиеся точки из старых event-файлов.
+    for old_file in glob.glob(os.path.join(out_dir, f"events.out.tfevents.*{BY_EPISODE_SUFFIX}")):
+        os.remove(old_file)
+
+    writer = SummaryWriter(log_dir=out_dir, filename_suffix=BY_EPISODE_SUFFIX)
     for tag in reward_tags:
         events = scalars[tag]
         steps = np.array([e.step for e in events], dtype=float)
@@ -135,10 +142,10 @@ def run_once(run_dir, mode, out_dir):
         write_png(run_dir, png_out, scalars, ep_steps, cumulative_episodes, reward_tags)
 
     if mode in ("tensorboard", "both"):
-        # По умолчанию — "by_episode" прямо внутри папки run-id (родитель run_dir,
-        # т.к. run_dir указывает на конкретный Brain внутри results/<run-id>/<Brain>),
-        # а не рядом с папкой Brain'а с суффиксом.
-        tb_out = out_dir if mode == "tensorboard" and out_dir else os.path.join(os.path.dirname(run_dir), "by_episode")
+        # По умолчанию пишем прямо в run_dir — та же папка и тот же run в
+        # TensorBoard, что и обычные Rewards/* по шагам, просто другая карточка
+        # (тег начинается с RewardsByEpisode/, а не Rewards/).
+        tb_out = out_dir if mode == "tensorboard" and out_dir else run_dir
         write_tensorboard(tb_out, scalars, ep_steps, cumulative_episodes, reward_tags)
 
 
@@ -152,7 +159,8 @@ def main():
     parser.add_argument(
         "-o", "--out-dir", default=None,
         help="Для --mode png: куда сохранять PNG (по умолчанию <run_dir>/episode_plots). "
-             "Для --mode tensorboard: папка нового run'а (по умолчанию results/<run-id>/by_episode)",
+             "Для --mode tensorboard: куда писать (по умолчанию run_dir — тот же run, "
+             "что и Rewards/* по шагам)",
     )
     parser.add_argument(
         "--watch", action="store_true",
