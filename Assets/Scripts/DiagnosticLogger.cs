@@ -29,6 +29,11 @@ public class DiagnosticLogger : MonoBehaviour
     // сообщает билду, куда писать логи — см. ResolveCsvLogDir().
     private const string ResultsDirArgName = "--diagLogDir";
 
+    // Присутствие этого аргумента (см. tools/run_training.sh) означает, что
+    // mlagents-learn запущен с --resume — тогда CSV нужно дописывать, а не
+    // перезатирать, как при обычном --force. Просто флаг, без значения.
+    private const string ResumeArgName = "--resume";
+
     // Кэшируем на весь процесс: аргументы командной строки одни и те же для
     // всех экземпляров DiagnosticLogger, нет смысла парсить их каждый раз.
     private static string cachedCsvLogDir;
@@ -85,6 +90,17 @@ public class DiagnosticLogger : MonoBehaviour
         return cachedCsvLogDir;
     }
 
+    private static bool ResolveResumeFlag()
+    {
+        string[] args = System.Environment.GetCommandLineArgs();
+        foreach (string arg in args)
+        {
+            if (arg == ResumeArgName)
+                return true;
+        }
+        return false;
+    }
+
     private void EnsureWriterOpen()
     {
         if (opened || openFailed || !enableLogging) return;
@@ -101,11 +117,18 @@ public class DiagnosticLogger : MonoBehaviour
                 : $"diagnostic_log_{nextFallbackId++}.csv";
             string path = Path.Combine(ResolveCsvLogDir(), fileName);
 
-            // Открываем StreamWriter (false означает перезаписывать файл при каждом новом запуске)
-            writer = new StreamWriter(path, false, Encoding.UTF8);
+            // При --resume (см. tools/run_training.sh) дописываем в уже существующий
+            // файл, а не перезатираем его, как при обычном --force — иначе история
+            // CSV из прошлого прогона терялась бы при каждом продолжении обучения.
+            // Заголовок в этом случае не дублируем: он уже есть в существующем файле.
+            bool append = ResolveResumeFlag() && File.Exists(path);
+            writer = new StreamWriter(path, append, Encoding.UTF8);
 
-            // Записываем заголовок колонок CSV (строго в одну строчку без пробелов)
-            writer.WriteLine("time,step,arena,ballSeen,ballAngle,ballDist,uz,irL,irR,gripIR,camYaw,gas,steering,hasBall,displacementX,displacementZ,heading,speed");
+            if (!append)
+            {
+                // Записываем заголовок колонок CSV (строго в одну строчку без пробелов)
+                writer.WriteLine("time,step,arena,ballSeen,ballAngle,ballDist,uz,irL,irR,gripIR,camYaw,gas,steering,hasBall,displacementX,displacementZ,heading,speed");
+            }
             // Сразу на диск: без этого при коротком/прерванном прогоне (например,
             // обучение остановили раньше, чем накопилось flushEveryNRows строк, а
             // OnDestroy() не успел отработать) файл остаётся полностью пустым —
