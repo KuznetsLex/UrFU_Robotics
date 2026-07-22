@@ -176,6 +176,10 @@ public class RobotBrain : Agent
     [FormerlySerializedAs("useRealRobotSensors")]
     [SerializeField] private bool useRealRobotIo;
 
+    [Header("Policy observation normalization")]
+    [Tooltip("Distance represented by ultrasonic observation value 1.0, in meters.")]
+    [Min(0.01f)] public float ultrasonicObservationMaxMeters = 5f;
+
     public bool UseRealRobotIo
     {
         get => useRealRobotIo;
@@ -410,8 +414,7 @@ public class RobotBrain : Agent
                 : 0f;
         }
 
-        rewardSumDict = new Dictionary<string, float>();
-        rewardCountDict = new Dictionary<string, int>();
+        EnsureEpisodeStatistics();
         episodeStepCounter = 0;
         statsSent = false;
         cameraScoreSum = 0f;
@@ -465,6 +468,14 @@ public class RobotBrain : Agent
         }
 
         return robotSensorReceiver;
+    }
+
+    private void EnsureEpisodeStatistics()
+    {
+        if (rewardSumDict == null)
+            rewardSumDict = new Dictionary<string, float>();
+        if (rewardCountDict == null)
+            rewardCountDict = new Dictionary<string, int>();
     }
 
     private bool TryGetSelectedGripperState(out bool isOpen)
@@ -542,6 +553,11 @@ public class RobotBrain : Agent
         }
 
         // Сброс статистики
+        // Runtime-spawned agents can receive the Academy reset before their
+        // non-serialized bookkeeping has survived an Editor domain reload.
+        // Keep episode startup self-contained instead of assuming Initialize()
+        // was the last lifecycle callback that touched these fields.
+        EnsureEpisodeStatistics();
         rewardSumDict.Clear();
         rewardCountDict.Clear();
         episodeStepCounter = 0;
@@ -757,14 +773,16 @@ public class RobotBrain : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1. Ультразвук (сырое расстояние) и ИК-датчики
+        // 1. Ультразвук: физические метры преобразуются в 0..1; ИК — бинарные.
         TryGetSelectedRangeSensors(
             out float ultrasonicMeters,
             out bool leftIr,
             out bool rightIr,
             out bool gripperMountedIr);
 
-        sensor.AddObservation(ultrasonicMeters);
+        float normalizedUltrasonic = Mathf.Clamp01(
+            ultrasonicMeters / Mathf.Max(0.01f, ultrasonicObservationMaxMeters));
+        sensor.AddObservation(normalizedUltrasonic);
         sensor.AddObservation(leftIr ? 1f : 0f);
         sensor.AddObservation(rightIr ? 1f : 0f);
         sensor.AddObservation(gripperMountedIr ? 1f : 0f);
@@ -810,8 +828,11 @@ public class RobotBrain : Agent
         sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / Mathf.Max(1f, noDetectionSteps)));
 
         // ----- 5. ПРЕДЫДУЩИЕ ДЕЙСТВИЯ (только один предыдущий шаг) -----
-        // Газ и руль с учётом клиппинга
-        sensor.AddObservation(prevGas);
+        // Предыдущие газ и руль в едином policy-диапазоне -1..1.
+        float maxLinearCommand = trackController != null
+            ? Mathf.Max(Mathf.Epsilon, trackController.maxLinearCmd)
+            : 1f;
+        sensor.AddObservation(Mathf.Clamp(prevGas / maxLinearCommand, -1f, 1f));
         sensor.AddObservation(prevSteer);
         // Команда клешни: Grab/закрыть = +1, Release/открыть = -1, None = 0.
         sensor.AddObservation(EncodeGripperCommandObservation(

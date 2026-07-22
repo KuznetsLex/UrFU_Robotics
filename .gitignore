@@ -10,8 +10,12 @@
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #
+.venv*
+.robot.config.psd1
 .vscode/
 .utmp/
+/Assets/_Recovery/
+/Assets/_Recovery.meta
 /tools/yolo/.venv/
 __pycache__/
 *.py[cod]

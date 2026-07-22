@@ -2208,7 +2208,7 @@ MonoBehaviour:
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 0
+  m_BehaviorType: 1
   m_BehaviorName: GFSX_Brain
   TeamId: 0
   m_UseChildSensors: 1
@@ -2267,6 +2267,7 @@ MonoBehaviour:
   holdPoint: {fileID: 4065118821553703660}
   ball: {fileID: 0}
   useRealRobotIo: 0
+  ultrasonicObservationMaxMeters: 5
   logGripperInferenceDebug: 0
   environmentManager: {fileID: 0}
   regenerateEveryEpisodes: 10
@@ -2285,9 +2286,20 @@ MonoBehaviour:
   noDetectionSteps: 100
   stepPenalty: -0.0002
   grabAttemptReward: 0.1
+  grabZoneRadius: 1
+  smoothnessPenaltyScale: 0.002
   cameraRewardScale: 0.02
   cameraAngleDeadZone: 0.05
   cameraRewardClamp: 0.02
+  failedGrabPenalty: -0.1
+  speedPenaltyThresholdLinear: 0.2
+  speedPenaltyThresholdAngular: 30
+  speedPenaltyAmount: -0.05
+  spawnHalfExtents: {x: 15, y: 15}
+  randomizeSpawn: 1
+  randomizeBall: 1
+  minSpawnDistance: 2
+  isTraining: 1
   randomizeCameraPanOnEpisodeBegin: 1
 --- !u!114 &1636716259720906956
 MonoBehaviour:

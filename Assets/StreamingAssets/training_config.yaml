@@ -14,6 +14,7 @@
 # строки (снимите "#" в начале строки).
 
 # RobotBrain:
+#   ultrasonicObservationMaxMeters: 5
 #   gripReward: 1.0
 #   outOfBoundsPenalty: -0.5
 #   stepPenalty: -0.0002
