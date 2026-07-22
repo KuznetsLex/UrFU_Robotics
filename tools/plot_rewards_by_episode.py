@@ -16,12 +16,19 @@
     # PNG-картинки (по умолчанию):
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain
 
-    # Новая карточка "RewardsByEpisode" в TensorBoard — пишется прямо в run_dir,
-    # в тот же run, что и обычные Rewards/* (по шагам):
+    # Отдельный "run" в самом TensorBoard (карточка "RewardsByEpisode"),
+    # пишется в results/small_input_rand_ball_fix/by_episode — СОСЕДНЮЮ папку,
+    # не в ту же, что и обычные Rewards/* (по шагам). Это обязательно: у
+    # TensorBoard DirectoryWatcher в одной директории может быть только один
+    # активно растущий event-файл одновременно — если в папке с настоящими
+    # данными обучения появляется наш ВТОРОЙ растущий файл, DirectoryWatcher
+    # считает файл обучения "завершённым" и перестаёт видеть его обновления
+    # (см. EpisodeTensorBoardWriter и github.com/tensorflow/tensorboard/issues/349).
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain --mode tensorboard
 
-    # То же самое, но в фоне, пока идёт обучение: пересчитывает и перезаписывает
-    # run каждые --interval секунд, пока не остановишь (Ctrl+C):
+    # То же самое, но в фоне, пока идёт обучение: раз в --interval секунд
+    # дописывает новые точки в тот же файл (не пересоздаёт его), пока не
+    # остановишь (Ctrl+C):
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain --mode tensorboard --watch --interval 30
 """
 
@@ -39,7 +46,7 @@ SKIP_TAGS = {"Rewards/EpisodeLength"}
 TB_NEW_PREFIX = "RewardsByEpisode/"
 # Суффикс наших собственных event-файлов, когда пишем в тот же run, что и
 # обычные Rewards/* по шагам — по нему отличаем "свои" файлы от настоящих
-# файлов обучения при очистке перед перезаписью (см. write_tensorboard).
+# файлов обучения при очистке файлов от прошлых ЗАПУСКОВ этого скрипта.
 BY_EPISODE_SUFFIX = ".by_episode"
 
 
@@ -98,34 +105,58 @@ def write_png(run_dir, out_dir, scalars, ep_steps, cumulative_episodes, reward_t
         print(f"saved {out_path}")
 
 
-def write_tensorboard(out_dir, scalars, ep_steps, cumulative_episodes, reward_tags):
-    from torch.utils.tensorboard import SummaryWriter
+class EpisodeTensorBoardWriter:
+    """Держит один открытый SummaryWriter на весь --watch-сеанс и только
+    дописывает новые точки, а не пересоздаёт файл каждую итерацию — иначе
+    TensorBoard видит, как файл в директории то исчезает, то появляется новый,
+    и его фоновый reload может молча сломаться.
 
-    os.makedirs(out_dir, exist_ok=True)
+    ВАЖНО: writer всё равно должен указывать на ОТДЕЛЬНУЮ от настоящих данных
+    обучения папку (см. main()). У TensorBoard DirectoryWatcher в одной
+    директории может быть только один активно растущий event-файл — если туда
+    же писать ещё один растущий файл (даже без удаления/пересоздания), при
+    появлении нашего файла DirectoryWatcher посчитает файл обучения
+    "завершённым" и перестанет видеть его дальнейшие обновления
+    (см. github.com/tensorflow/tensorboard/issues/349 и связанные комментарии
+    про directory_watcher.py). Дозапись в один файл решает только проблему
+    исчезновения/пересоздания файла, но не проблему двух одновременно растущих
+    файлов в одной папке — поэтому разные папки обязательны.
+    """
 
-    # out_dir теперь по умолчанию — это тот же run_dir, где лежат настоящие
-    # чекпоинты и tfevents самого обучения, поэтому rmtree() всей папки, как
-    # раньше, недопустим — удалит чужие файлы. Чистим только файлы, которые
-    # сами же создали на прошлых итерациях (отличаем по уникальному суффиксу),
-    # иначе накопятся дублирующиеся точки из старых event-файлов.
-    for old_file in glob.glob(os.path.join(out_dir, f"events.out.tfevents.*{BY_EPISODE_SUFFIX}")):
-        os.remove(old_file)
+    def __init__(self, out_dir):
+        from torch.utils.tensorboard import SummaryWriter
 
-    writer = SummaryWriter(log_dir=out_dir, filename_suffix=BY_EPISODE_SUFFIX)
-    for tag in reward_tags:
-        events = scalars[tag]
-        steps = np.array([e.step for e in events], dtype=float)
-        values = [e.value for e in events]
-        episodes = np.interp(steps, ep_steps, cumulative_episodes)
+        os.makedirs(out_dir, exist_ok=True)
+        # Чистим только файлы от ПРОШЛЫХ ЗАПУСКОВ этого скрипта (по суффиксу) —
+        # внутри одного сеанса файл после этого больше не трогаем.
+        for old_file in glob.glob(os.path.join(out_dir, f"events.out.tfevents.*{BY_EPISODE_SUFFIX}")):
+            os.remove(old_file)
 
-        new_tag = TB_NEW_PREFIX + tag[len(REWARDS_PREFIX):]
-        for ep, val in zip(episodes, values):
-            writer.add_scalar(new_tag, val, global_step=int(round(ep)))
-    writer.close()
-    print(f"Записано в {out_dir} (карточка '{TB_NEW_PREFIX.rstrip('/')}' в TensorBoard)")
+        self.writer = SummaryWriter(log_dir=out_dir, filename_suffix=BY_EPISODE_SUFFIX)
+        self.written_counts = {}  # tag -> сколько точек этого тега уже отправлено
+
+    def update(self, scalars, ep_steps, cumulative_episodes, reward_tags):
+        for tag in reward_tags:
+            events = scalars[tag]
+            already_written = self.written_counts.get(tag, 0)
+            if already_written >= len(events):
+                continue
+
+            steps = np.array([e.step for e in events], dtype=float)
+            episodes = np.interp(steps, ep_steps, cumulative_episodes)
+            new_tag = TB_NEW_PREFIX + tag[len(REWARDS_PREFIX):]
+
+            for i in range(already_written, len(events)):
+                self.writer.add_scalar(new_tag, events[i].value, global_step=int(round(episodes[i])))
+            self.written_counts[tag] = len(events)
+
+        self.writer.flush()
+
+    def close(self):
+        self.writer.close()
 
 
-def run_once(run_dir, mode, out_dir):
+def run_once(run_dir, mode, out_dir, tb_writer):
     scalars = load_scalars(run_dir)
 
     if EPISODE_LENGTH_TAG not in scalars:
@@ -142,11 +173,7 @@ def run_once(run_dir, mode, out_dir):
         write_png(run_dir, png_out, scalars, ep_steps, cumulative_episodes, reward_tags)
 
     if mode in ("tensorboard", "both"):
-        # По умолчанию пишем прямо в run_dir — та же папка и тот же run в
-        # TensorBoard, что и обычные Rewards/* по шагам, просто другая карточка
-        # (тег начинается с RewardsByEpisode/, а не Rewards/).
-        tb_out = out_dir if mode == "tensorboard" and out_dir else run_dir
-        write_tensorboard(tb_out, scalars, ep_steps, cumulative_episodes, reward_tags)
+        tb_writer.update(scalars, ep_steps, cumulative_episodes, reward_tags)
 
 
 def main():
@@ -159,8 +186,8 @@ def main():
     parser.add_argument(
         "-o", "--out-dir", default=None,
         help="Для --mode png: куда сохранять PNG (по умолчанию <run_dir>/episode_plots). "
-             "Для --mode tensorboard: куда писать (по умолчанию run_dir — тот же run, "
-             "что и Rewards/* по шагам)",
+             "Для --mode tensorboard: папка нового run'а (по умолчанию results/<run-id>/by_episode — "
+             "ОБЯЗАТЕЛЬНО отдельная от run_dir, см. EpisodeTensorBoardWriter)",
     )
     parser.add_argument(
         "--watch", action="store_true",
@@ -175,26 +202,41 @@ def main():
 
     run_dir = args.run_dir.rstrip("/")
 
-    if not args.watch:
-        run_once(run_dir, args.mode, args.out_dir)
-        return
+    tb_writer = None
+    if args.mode in ("tensorboard", "both"):
+        # ОБЯЗАТЕЛЬНО отдельная папка от run_dir — см. docstring
+        # EpisodeTensorBoardWriter про DirectoryWatcher и issue #349.
+        tb_out = args.out_dir if args.out_dir else os.path.join(os.path.dirname(run_dir), "by_episode")
+        tb_writer = EpisodeTensorBoardWriter(tb_out)
 
-    print(f"watch-режим: пересчёт каждые {args.interval:.0f} сек, Ctrl+C для остановки")
-    while True:
-        try:
-            run_once(run_dir, args.mode, args.out_dir)
-        except KeyboardInterrupt:
-            raise
-        except Exception as exc:
-            # Событие могло попасть в event-файл наполовину записанным во время
-            # флаша ML-Agents — не падаем, просто пробуем ещё раз через interval.
-            print(f"пропускаю итерацию: {exc}")
+    try:
+        if not args.watch:
+            run_once(run_dir, args.mode, args.out_dir, tb_writer)
+            if tb_writer:
+                print(f"Записано в {tb_writer.writer.log_dir} (карточка '{TB_NEW_PREFIX.rstrip('/')}' в TensorBoard)")
+            return
 
-        try:
-            time.sleep(args.interval)
-        except KeyboardInterrupt:
-            print("остановлено")
-            break
+        print(f"watch-режим: пересчёт каждые {args.interval:.0f} сек, Ctrl+C для остановки")
+        while True:
+            try:
+                run_once(run_dir, args.mode, args.out_dir, tb_writer)
+                if tb_writer:
+                    print(f"обновлено ({sum(tb_writer.written_counts.values())} точек всего по тегам)")
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                # Событие могло попасть в event-файл наполовину записанным во время
+                # флаша ML-Agents — не падаем, просто пробуем ещё раз через interval.
+                print(f"пропускаю итерацию: {exc}")
+
+            try:
+                time.sleep(args.interval)
+            except KeyboardInterrupt:
+                print("остановлено")
+                break
+    finally:
+        if tb_writer:
+            tb_writer.close()
 
 
 if __name__ == "__main__":
