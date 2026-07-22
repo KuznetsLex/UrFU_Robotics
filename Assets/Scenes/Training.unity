@@ -183,6 +183,7 @@ MonoBehaviour:
   createWalls: 1
   visibleWalls: 1
   baseWallHeight: 0.5
+  wallColor: {r: 0, g: 0, b: 0, a: 1}
 --- !u!1 &555000121
 GameObject:
   m_ObjectHideFlags: 0
@@ -287,11 +288,33 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1367852722 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8420677910478226421, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+  m_PrefabInstance: {fileID: 4372044676883856589}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &2001394585 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4505736061828951770, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
   m_PrefabInstance: {fileID: 4372044676883856589}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &2001394594
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1367852722}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 73a056e249f8d4afaadc6de505e6d08d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DiagnosticLogger
+  enableLogging: 0
+  logEveryN: 1
+  maxRows: 2000
+  flushEveryNRows: 20
+  flushEverySeconds: 2
 --- !u!1001 &3228754067649016818
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -459,13 +482,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: ball
+      value: 
+      objectReference: {fileID: 443588116}
+    - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: MaxStep
       value: 10000
       objectReference: {fileID: 0}
-    - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: ball
-      value:
-      objectReference: {fileID: 443588116}
     - target: {fileID: 5153601074894658457, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: stepPenalty
       value: -0.0001
@@ -546,7 +569,10 @@ PrefabInstance:
     - {fileID: 8001122334455667, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 8420677910478226421, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2001394594}
   m_SourcePrefab: {fileID: 100100000, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
 --- !u!1001 &6736962765603667905
 PrefabInstance:
