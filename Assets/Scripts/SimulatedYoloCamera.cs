@@ -39,6 +39,7 @@ public class SimulatedYoloCamera : MonoBehaviour
     private float baseHorizontalFOV;
     private Quaternion baseLocalRotation;
     private ulong measurementVersion;
+    private Transform sensorOwnerRoot;
     private readonly Queue<(float angle, float areaRatio, float aspectRatio, bool visible)>
         delayedMeasurements = new Queue<(float, float, float, bool)>();
 
@@ -58,6 +59,9 @@ public class SimulatedYoloCamera : MonoBehaviour
         // иначе за "базовое" значение для рандомизации/сброса возьмётся не то, что
         // задано в конфиге, а старое значение из инспектора.
         TrainingConfig.ApplyOverrides(this, "SimulatedYoloCamera");
+
+        RobotBrain owner = GetComponentInParent<RobotBrain>();
+        sensorOwnerRoot = owner != null ? owner.transform : transform;
     }
 
     // Переиспользуемый буфер для RaycastNonAlloc — на RaycastAll здесь раньше
@@ -347,7 +351,11 @@ public class SimulatedYoloCamera : MonoBehaviour
         for (int i = 0; i < hitCount; i++)
         {
             RaycastHit hit = losHitsBuffer[i];
-            if (hit.transform.root == transform.root)
+            // ArenaSpawner parents the robot, walls and generated boxes under the
+            // same Arena_N root. Comparing transform.root therefore classified every
+            // arena obstacle as part of the robot and made occluded balls visible.
+            // Ignore only colliders that actually belong to this robot hierarchy.
+            if (hit.transform == sensorOwnerRoot || hit.transform.IsChildOf(sensorOwnerRoot))
                 continue;
             if (hit.transform == targetBall || hit.transform.IsChildOf(targetBall))
                 return true;

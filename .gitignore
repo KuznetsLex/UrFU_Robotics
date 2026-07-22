@@ -121,6 +121,7 @@ InitTestScene*.unity*
 
 /Build*
 /results
+/csv_logs/
 *.onnx
 *.onnx.meta
 /[Aa]ssets/ML-Agents/Timers
