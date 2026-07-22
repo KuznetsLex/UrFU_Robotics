@@ -31,6 +31,19 @@ public class EnvironmentManager : MonoBehaviour
     public float baseWallHeight = 0.5f;   // Высота стен до масштабирования
     public Color wallColor = Color.black; // Цвет стен — чтобы их было видно при виде сверху
 
+    [Header("Domain Randomization")]
+    [Tooltip("Рандомизировать количество коробок при каждой генерации арены (диапазон boxCountRange) вместо фиксированного boxCount")]
+    public bool randomizeBoxCount = true;
+    [Tooltip("Диапазон количества коробок при randomizeBoxCount (включительно)")]
+    public Vector2Int boxCountRange = new Vector2Int(4, 10);
+
+    [Tooltip("Рандомизировать массу каждой коробки (диапазон boxMassRange) вместо фиксированной boxMass")]
+    public bool randomizeBoxMass = true;
+    [Tooltip("Масса коробки в кг, если randomizeBoxMass выключен")]
+    public float boxMass = 0.5f;
+    [Tooltip("Диапазон массы коробки в кг при randomizeBoxMass (0.5 = 500 г)")]
+    public Vector2 boxMassRange = new Vector2(0.35f, 0.65f);
+
     private readonly float[] baseBoxDimensions = { 0.14f, 0.26f, 0.36f };
     private List<GameObject> activeBoxes = new List<GameObject>();
     private List<Vector3> pathSegments = new List<Vector3>();
@@ -69,6 +82,13 @@ public class EnvironmentManager : MonoBehaviour
 
     public void GenerateArena()
     {
+        // Количество коробок фиксируем один раз на всю генерацию (а не на
+        // каждую попытку перекрыть LOS), чтобы оно не "плавало" между
+        // повторными попытками внутри одного вызова.
+        int currentBoxCount = randomizeBoxCount
+            ? Random.Range(boxCountRange.x, boxCountRange.y + 1)
+            : boxCount;
+
         int maxRetries = 15;
         for (int attempt = 0; attempt < maxRetries; attempt++)
         {
@@ -87,13 +107,13 @@ public class EnvironmentManager : MonoBehaviour
 
             if (TryBlockLineOfSight())
             {
-                SpawnObstaclesTight(boxCount - 1);
+                SpawnObstaclesTight(currentBoxCount - 1);
                 return;
             }
         }
 
         Debug.LogWarning("Не удалось идеально перекрыть LOS, спавним арену как есть.");
-        SpawnObstaclesTight(boxCount);
+        SpawnObstaclesTight(currentBoxCount);
     }
 
     private void ClearArena()
@@ -122,9 +142,9 @@ public class EnvironmentManager : MonoBehaviour
         float height = baseWallHeight * globalScale;
         float thickness = 0.1f * globalScale; // Базовая толщина стены 10 см
 
-        // Создаем 4 стены вокруг полигона
+        // Стены вокруг полигона. Wall_Bottom (сзади стартовой позиции робота,
+        // -Z) намеренно не строим — с этой стороны арена теперь открыта.
         CreateWall("Wall_Top", new Vector3(0, height / 2f, currentArenaZ / 2f + thickness / 2f), new Vector3(currentArenaX + thickness * 2f, height, thickness));
-        CreateWall("Wall_Bottom", new Vector3(0, height / 2f, -currentArenaZ / 2f - thickness / 2f), new Vector3(currentArenaX + thickness * 2f, height, thickness));
         CreateWall("Wall_Right", new Vector3(currentArenaX / 2f + thickness / 2f, height / 2f, 0), new Vector3(thickness, height, currentArenaZ));
         CreateWall("Wall_Left", new Vector3(-currentArenaX / 2f - thickness / 2f, height / 2f, 0), new Vector3(thickness, height, currentArenaZ));
     }
@@ -313,11 +333,7 @@ public class EnvironmentManager : MonoBehaviour
                 MarkAsObstacle(newBox);
 
                 if (newBox.TryGetComponent<Rigidbody>(out Rigidbody rb))
-                {
-                    rb.centerOfMass = new Vector3(0, -0.4f, 0);
-                    rb.angularDamping = 2f;
-                    rb.Sleep();
-                }
+                    ConfigureBoxRigidbody(rb);
 
                 activeBoxes.Add(newBox);
                 Physics.SyncTransforms();
@@ -387,11 +403,7 @@ public class EnvironmentManager : MonoBehaviour
                 MarkAsObstacle(newBox);
 
                 if (newBox.TryGetComponent<Rigidbody>(out Rigidbody rb))
-                {
-                    rb.centerOfMass = new Vector3(0, -0.4f, 0);
-                    rb.angularDamping = 2f;
-                    rb.Sleep();
-                }
+                    ConfigureBoxRigidbody(rb);
 
                 activeBoxes.Add(newBox);
                 Physics.SyncTransforms();
@@ -411,6 +423,16 @@ public class EnvironmentManager : MonoBehaviour
             if (dist < requiredDist) return false;
         }
         return true;
+    }
+
+    private void ConfigureBoxRigidbody(Rigidbody rb)
+    {
+        rb.mass = randomizeBoxMass
+            ? Random.Range(boxMassRange.x, boxMassRange.y)
+            : boxMass;
+        rb.centerOfMass = new Vector3(0, -0.4f, 0);
+        rb.angularDamping = 2f;
+        rb.Sleep();
     }
 
     private void MarkAsObstacle(GameObject obstacle)

@@ -92,6 +92,13 @@ EnvironmentManager:
   visibleWalls: true
   baseWallHeight: 0.5
 
+  # --- Domain Randomization ---
+  randomizeBoxCount: true
+  boxCountRange: [4, 10]
+  randomizeBoxMass: true
+  boxMass: 0.5
+  boxMassRange: [0.35, 0.65]
+
 ArenaSpawner:
   # --- Пол ---
   floorMargin: 1.2
