@@ -50,6 +50,8 @@ RobotBrain:
   cameraRewardScale: 0.02
   cameraAngleDeadZone: 0.05
   cameraRewardClamp: 0.02
+  cameraAngleChangeThresholdDegrees: 5
+  cameraAngleChangePenaltyPerDegree: 0.001
   failedGrabPenalty: -0.1
 
   # --- Speed Penalty in Grab Zone ---

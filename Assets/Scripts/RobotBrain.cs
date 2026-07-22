@@ -276,6 +276,12 @@ public class RobotBrain : Agent
     [Tooltip("Максимальный модуль camera reward за одно новое измерение. 0 отключает ограничение.")]
     [Min(0f)] public float cameraRewardClamp = 0.02f;
 
+    [Tooltip("Изменение абсолютной цели сервопривода до этого порога не штрафуется, в градусах.")]
+    [Min(0f)] public float cameraAngleChangeThresholdDegrees = 5f;
+
+    [Tooltip("Штраф за каждый градус изменения цели сверх порога.")]
+    [Min(0f)] public float cameraAngleChangePenaltyPerDegree = 0.001f;
+
     [Tooltip("Штраф за неудачную попытку захвата (клешня закрыта или мяч вне зоны)")]
     public float failedGrabPenalty = -0.1f;
 
@@ -1066,6 +1072,18 @@ public class RobotBrain : Agent
         // 1. Штраф за каждый шаг
         AddRewardWithStats("StepPenalty", stepPenalty);
 
+        float cameraTargetChangeDegrees =
+            Mathf.Abs(cameraPanTarget - previousCameraPanTarget) * CameraRotator.PanHalfRange;
+        float excessiveCameraTargetChange = Mathf.Max(
+            0f,
+            cameraTargetChangeDegrees - cameraAngleChangeThresholdDegrees);
+        if (excessiveCameraTargetChange > 0f && cameraAngleChangePenaltyPerDegree > 0f)
+        {
+            AddRewardWithStats(
+                "CameraAngleChangePenalty",
+                -cameraAngleChangePenaltyPerDegree * excessiveCameraTargetChange);
+        }
+
         // Контакты приходят из физического шага, поэтому применяем накопленные события
         // здесь, чтобы награды и статистика оставались синхронизированы с шагом агента.
         while (pendingCollisionPenalties > 0)
@@ -1344,7 +1362,6 @@ public class RobotBrain : Agent
         // Обновляем историю для согласованности наблюдений в эвристическом режиме
         prevGas = clampedGas;
         prevSteer = clampedSteer;
-        previousCameraPanTarget = heuristicCameraPanTarget;
         previousGripCommand = gripCommand;
     }
 
