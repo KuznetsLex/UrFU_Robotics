@@ -323,7 +323,7 @@ public class RobotBrain : Agent
     private int targetLostCount;
     private bool grabZoneRewardGranted;
     private int previousGripCommand = 0; // Предыдущая команда клешни (0 – ничего, 1 – захват, 2 – отпустить)
-    public Vector2 arenaHalfExtents = new Vector2(15f, 30f);
+    private Vector2 arenaHalfExtents = new Vector2(15f, 30f);
 
     // Статистика эпизода для TensorBoard
     private Dictionary<string, float> rewardSumDict;
