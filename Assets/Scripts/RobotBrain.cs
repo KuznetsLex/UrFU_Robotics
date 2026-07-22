@@ -444,9 +444,15 @@ public class RobotBrain : Agent
         if (!useRealRobotIo)
         {
             if (isTraining)
+            {
                 yoloCamera?.RandomizeDomainParameters();
+                sensors?.RandomizeSensorMounting();
+            }
             else
+            {
                 yoloCamera?.ResetDomainParameters();
+                sensors?.ResetSensorMounting();
+            }
         }
 
         // Сброс статистики

@@ -128,6 +128,11 @@ VirtualSensors:
   ultrasonicRayCount: 10
   ultrasonicAngle: 45
 
+  # --- Domain Randomization (крепление датчиков) ---
+  randomizeSensorMounting: true
+  sensorPositionJitter: 0.05
+  sensorAngleJitter: 5
+
 SimulatedYoloCamera:
   # --- Camera simulation ---
   maxVisibleDistance: 30

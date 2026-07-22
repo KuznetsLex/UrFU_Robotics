@@ -18,7 +18,19 @@ public class VirtualSensors : MonoBehaviour
     public float ultrasonicAngle = 45f;
     public LayerMask obstacleLayer;
 
+    [Header("Domain Randomization (крепление датчиков)")]
+    [Tooltip("Рандомизировать положение/угол точек датчиков каждый эпизод — имитирует разброс при сборке/креплении на реальном роботе")]
+    public bool randomizeSensorMounting = true;
+    [Tooltip("Максимальное случайное смещение точки датчика по каждой оси, единицы сцены (1 unit = 1 дм)")]
+    [Min(0f)] public float sensorPositionJitter = 0.05f;
+    [Tooltip("Максимальный случайный угол наклона точки датчика по каждой оси, градусы")]
+    [Min(0f)] public float sensorAngleJitter = 5f;
+
     private RobotBrain robotBrain;
+
+    private bool baseSensorTransformsCaptured;
+    private Vector3 baseLeftIRLocalPos, baseRightIRLocalPos, baseGripperIRLocalPos, baseUltrasonicLocalPos;
+    private Quaternion baseLeftIRLocalRot, baseRightIRLocalRot, baseGripperIRLocalRot, baseUltrasonicLocalRot;
 
     private void Awake()
     {
@@ -26,6 +38,66 @@ public class VirtualSensors : MonoBehaviour
         if (obstacleLayer == 0)
             obstacleLayer = LayerMask.GetMask("Obstacle");
         robotBrain = GetComponent<RobotBrain>();
+    }
+
+    // === Доменная рандомизация крепления датчиков ===
+    // Вызывается из RobotBrain.OnEpisodeBegin() тем же образом, что и
+    // SimulatedYoloCamera.RandomizeDomainParameters()/ResetDomainParameters().
+
+    private void CaptureBaseSensorTransforms()
+    {
+        if (baseSensorTransformsCaptured)
+            return;
+
+        if (leftIRPoint != null) { baseLeftIRLocalPos = leftIRPoint.localPosition; baseLeftIRLocalRot = leftIRPoint.localRotation; }
+        if (rightIRPoint != null) { baseRightIRLocalPos = rightIRPoint.localPosition; baseRightIRLocalRot = rightIRPoint.localRotation; }
+        if (gripperIRPoint != null) { baseGripperIRLocalPos = gripperIRPoint.localPosition; baseGripperIRLocalRot = gripperIRPoint.localRotation; }
+        if (ultrasonicPoint != null) { baseUltrasonicLocalPos = ultrasonicPoint.localPosition; baseUltrasonicLocalRot = ultrasonicPoint.localRotation; }
+        baseSensorTransformsCaptured = true;
+    }
+
+    public void RandomizeSensorMounting()
+    {
+        CaptureBaseSensorTransforms();
+
+        if (!randomizeSensorMounting)
+        {
+            ResetSensorMounting();
+            return;
+        }
+
+        JitterTransform(leftIRPoint, baseLeftIRLocalPos, baseLeftIRLocalRot);
+        JitterTransform(rightIRPoint, baseRightIRLocalPos, baseRightIRLocalRot);
+        JitterTransform(gripperIRPoint, baseGripperIRLocalPos, baseGripperIRLocalRot);
+        JitterTransform(ultrasonicPoint, baseUltrasonicLocalPos, baseUltrasonicLocalRot);
+    }
+
+    public void ResetSensorMounting()
+    {
+        CaptureBaseSensorTransforms();
+
+        if (leftIRPoint != null) leftIRPoint.SetLocalPositionAndRotation(baseLeftIRLocalPos, baseLeftIRLocalRot);
+        if (rightIRPoint != null) rightIRPoint.SetLocalPositionAndRotation(baseRightIRLocalPos, baseRightIRLocalRot);
+        if (gripperIRPoint != null) gripperIRPoint.SetLocalPositionAndRotation(baseGripperIRLocalPos, baseGripperIRLocalRot);
+        if (ultrasonicPoint != null) ultrasonicPoint.SetLocalPositionAndRotation(baseUltrasonicLocalPos, baseUltrasonicLocalRot);
+    }
+
+    private void JitterTransform(Transform point, Vector3 basePos, Quaternion baseRot)
+    {
+        if (point == null)
+            return;
+
+        Vector3 posOffset = new Vector3(
+            UnityEngine.Random.Range(-sensorPositionJitter, sensorPositionJitter),
+            UnityEngine.Random.Range(-sensorPositionJitter, sensorPositionJitter),
+            UnityEngine.Random.Range(-sensorPositionJitter, sensorPositionJitter));
+
+        Vector3 angleOffset = new Vector3(
+            UnityEngine.Random.Range(-sensorAngleJitter, sensorAngleJitter),
+            UnityEngine.Random.Range(-sensorAngleJitter, sensorAngleJitter),
+            UnityEngine.Random.Range(-sensorAngleJitter, sensorAngleJitter));
+
+        point.SetLocalPositionAndRotation(basePos + posOffset, baseRot * Quaternion.Euler(angleOffset));
     }
 
     // === Методы для получения показаний датчиков ===
