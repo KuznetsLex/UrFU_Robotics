@@ -293,14 +293,63 @@ mingw32-make yolo
 Test-Path .\data\onnx_vino\onnx26\best_int8.onnx
 ```
 
-## Полный запуск робота
+## Инференс на физическом роботе
 
-Цель `make robot` пока не реализована. Для неё необходимо подключить policy
-ONNX к `Behavior Parameters`, передать реальные сенсоры в политику и направить
-её действия в ROS `/cmd_vel`.
+Готовая сцена `Assets/Scenes/Inference.unity` использует policy
+`Assets/Models/GFSX_Brain.onnx` в режиме `InferenceOnly`. Она получает реальные
+ультразвуковые и ИК-датчики через ROS, детекции YOLO через UDP `5005` и отправляет
+действия на `/cmd_vel`, `/cmd_gripper` и `/cmd_camera_pan`.
 
-До завершения этой интеграции рабочая команда запуска зрения:
+Параметры SSH хранятся в локальном `.robot.config.psd1` (пример —
+`.robot.config.example.psd1`). Файл автоматически читается всеми командами
+`make robot-*` и исключён из Git. Для безопасного развёртывания без приводов:
+
+```powershell
+make robot-stealth
+make inference-check
+```
+
+`robot-stealth` поднимает ROS TCP endpoint и сенсоры, но не импортирует драйверы
+моторов и сервоприводов. После успешной проверки остановите стенд и, когда робот
+стоит безопасно, запустите normal mode явно:
+
+```powershell
+make robot-stop
+make robot-start
+```
+
+Для обычного обновления кода робота, перезапуска normal mode и вывода
+диагностики достаточно одной команды:
+
+```powershell
+make robot-restart
+```
+
+Затем откройте `Assets/Scenes/Inference.unity`, включите Play Mode и в отдельном
+терминале запустите зрение:
 
 ```powershell
 make yolo
 ```
+
+`Escape` немедленно отправляет нулевую скорость; `Enter` снимает локальный
+E-STOP. При потере команд robot-side watchdog останавливает моторы через `0.5 с`.
+
+Контракт policy:
+
+| Канал | Значение |
+|---|---|
+| Наблюдения | 15 признаков × 5 стеков = 75 |
+| Continuous 0 | линейная команда `[-1, 1]` |
+| Continuous 1 | поворот: `+1` вправо в policy, преобразуется в ROS `angular.z < 0` |
+| Continuous 2 | абсолютная цель поворота камеры `[-1, 1]` |
+| Discrete 0 | `0 = none`, `1 = grab`, `2 = release` |
+| ROS TCP | `192.168.2.158:10001` |
+| Камера | `http://192.168.2.158:10002/frame.jpg` |
+| YOLO → Unity | UDP `5005` |
+
+Перед подачей в policy УЗ-расстояние нормализуется как `clamp(meters / 5, 0, 1)`,
+а предыдущая линейная команда — как `clamp(gas / maxLinearCmd, -1, 1)`.
+Одинаковый контракт используется при обучении на виртуальных сенсорах и при
+инференсе на данных реального робота. Дополнительная running-нормализация
+ML-Agents (`network_settings.normalize: true`) остаётся включённой.

@@ -13,6 +13,7 @@ public class VirtualSensors : MonoBehaviour
     [Min(0f)] public float irDistance = 2.4f;
     [Tooltip("Дальность центрального ИК-датчика, перенесённого на захват.")]
     [Min(0f)] public float gripperDistance = 0.7f;
+    [Tooltip("Максимальная дальность УЗ в Unity units. При выдаче наблюдения переводится в метры через EnvironmentManager.globalScale.")]
     public float ultrasonicMaxDistance = 50f;
     public int ultrasonicRayCount = 10;
     public float ultrasonicAngle = 45f;
@@ -40,17 +41,19 @@ public class VirtualSensors : MonoBehaviour
     public float GetGripperIR() => CastRay(gripperIRPoint, gripperDistance, gripperDetectionMask) ? 1f : 0f;
 
     /// <summary>
-    /// Возвращает сырое расстояние до ближайшего препятствия в метрах (без нормализации).
+    /// Возвращает расстояние до ближайшего препятствия в физических метрах
+    /// (без нормализации для policy).
     /// Используется для наблюдений агента.
     /// </summary>
     public float GetUltrasonicDistance()
     {
-        return GetUltrasonicMinDistance();
+        return GetUltrasonicMinDistanceMeters();
     }
 
-    private float GetUltrasonicMinDistance()
+    private float GetUltrasonicMinDistanceMeters()
     {
-        if (ultrasonicPoint == null) return ultrasonicMaxDistance;
+        float worldUnitsPerMeter = GetWorldUnitsPerMeter();
+        if (ultrasonicPoint == null) return ultrasonicMaxDistance / worldUnitsPerMeter;
         Vector3 origin = ultrasonicPoint.position;
         Vector3 forward = ultrasonicPoint.forward;
         Vector3 up = ultrasonicPoint.up;
@@ -69,7 +72,17 @@ public class VirtualSensors : MonoBehaviour
                     minDist = hit.distance;
             }
         }
-        return minDist;
+        return minDist / worldUnitsPerMeter;
+    }
+
+    private float GetWorldUnitsPerMeter()
+    {
+        EnvironmentManager environment = robotBrain != null
+            ? robotBrain.environmentManager
+            : null;
+        return environment != null
+            ? Mathf.Max(Mathf.Epsilon, environment.globalScale)
+            : 1f;
     }
 
     public bool TryReadSimulationSensors(
@@ -83,7 +96,7 @@ public class VirtualSensors : MonoBehaviour
             rightIRPoint != null ||
             gripperIRPoint != null;
 
-        ultrasonicMeters = GetUltrasonicMinDistance();
+        ultrasonicMeters = GetUltrasonicMinDistanceMeters();
         leftIrTriggered = CastRay(leftIRPoint, irDistance);
         gripperMountedIrTriggered = CastRay(gripperIRPoint, gripperDistance, gripperDetectionMask);
         rightIrTriggered = CastRay(rightIRPoint, irDistance);

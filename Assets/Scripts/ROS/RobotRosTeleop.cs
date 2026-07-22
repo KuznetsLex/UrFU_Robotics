@@ -72,10 +72,15 @@ namespace Team11.Ros
             EnsureCameraView(ros);
             ros.RosIPAddress = RobotIpAddress;
             ros.RosPort = RobotTcpPort;
-            ros.ConnectOnStart = true;
+            // RobotRosTeleop itself is installed after the scene loads. Do not
+            // depend on whether ROSConnection.Start() has already run: own the
+            // connection lifecycle explicitly and connect after configuration.
+            ros.ConnectOnStart = false;
             ros.ShowHud = true;
             ros.RegisterPublisher<TwistMsg>(CommandTopic, queue_size: 1);
             ros.Subscribe<QuaternionMsg>(SensorDataTopic, OnSensorData);
+            if (!ros.HasConnectionThread)
+                ros.Connect(RobotIpAddress, RobotTcpPort);
         }
 
         private static void EnsureCameraView(ROSConnection connection)

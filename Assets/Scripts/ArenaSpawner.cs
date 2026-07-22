@@ -48,6 +48,30 @@ public class ArenaSpawner : MonoBehaviour
         // быть переопределены раньше, чем мы решим, сколько арен и с каким шагом строить.
         TrainingConfig.ApplyOverrides(this, "ArenaSpawner");
 
+        RobotBrain templateBrain = null;
+        if (arenaTemplate != null)
+        {
+            foreach (Transform member in arenaTemplate)
+            {
+                if (member == null)
+                    continue;
+
+                templateBrain = member.GetComponentInChildren<RobotBrain>(true);
+                if (templateBrain != null)
+                    break;
+            }
+        }
+
+        // A physical robot is a single command target. Cloning an inference
+        // agent would make several policies publish competing commands to it.
+        if (templateBrain != null && templateBrain.UseRealRobotIo && arenaCount != 1)
+        {
+            Debug.LogWarning(
+                $"ArenaSpawner: real robot I/O requires exactly one agent; " +
+                $"forcing arenaCount from {arenaCount} to 1.");
+            arenaCount = 1;
+        }
+
         if (arenaTemplate == null || arenaTemplate.Length == 0)
         {
             Debug.LogWarning("ArenaSpawner: шаблон арены не назначен, размножение пропущено.");

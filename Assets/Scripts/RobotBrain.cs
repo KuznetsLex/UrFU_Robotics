@@ -176,6 +176,10 @@ public class RobotBrain : Agent
     [FormerlySerializedAs("useRealRobotSensors")]
     [SerializeField] private bool useRealRobotIo;
 
+    [Header("Policy observation normalization")]
+    [Tooltip("Distance represented by ultrasonic observation value 1.0, in meters.")]
+    [Min(0.01f)] public float ultrasonicObservationMaxMeters = 5f;
+
     public bool UseRealRobotIo
     {
         get => useRealRobotIo;
@@ -785,7 +789,7 @@ public class RobotBrain : Agent
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1. Ультразвук (сырое расстояние) и ИК-датчики
+        // 1. Ультразвук: физические метры преобразуются в 0..1; ИК — бинарные.
         TryGetSelectedRangeSensors(
             out float ultrasonicMeters,
             out bool leftIr,
@@ -797,12 +801,12 @@ public class RobotBrain : Agent
         bool simulateSensorNoise = !useRealRobotIo && isTraining;
         if (simulateSensorNoise)
         {
-            float maxUltrasonicDistance = sensors != null ? sensors.ultrasonicMaxDistance : 50f;
+            float maxUltrasonicMeters = Mathf.Max(0.01f, ultrasonicObservationMaxMeters);
             if (addUltrasonicNoise)
-                ultrasonicMeters += UnityEngine.Random.Range(-0.05f, 0.05f) * maxUltrasonicDistance;
+                ultrasonicMeters += UnityEngine.Random.Range(-0.05f, 0.05f) * maxUltrasonicMeters;
             if (enableUltrasonicFaults && UnityEngine.Random.value < ultrasonicFaultProbability)
-                ultrasonicMeters = UnityEngine.Random.Range(0f, maxUltrasonicDistance);
-            ultrasonicMeters = Mathf.Clamp(ultrasonicMeters, 0f, maxUltrasonicDistance);
+                ultrasonicMeters = UnityEngine.Random.Range(0f, maxUltrasonicMeters);
+            ultrasonicMeters = Mathf.Clamp(ultrasonicMeters, 0f, maxUltrasonicMeters);
 
             if (enableIRFaults)
             {
@@ -812,7 +816,9 @@ public class RobotBrain : Agent
             }
         }
 
-        sensor.AddObservation(ultrasonicMeters);
+        float normalizedUltrasonic = Mathf.Clamp01(
+            ultrasonicMeters / Mathf.Max(0.01f, ultrasonicObservationMaxMeters));
+        sensor.AddObservation(normalizedUltrasonic);
         sensor.AddObservation(leftIr ? 1f : 0f);
         sensor.AddObservation(rightIr ? 1f : 0f);
         sensor.AddObservation(gripperMountedIr ? 1f : 0f);
@@ -869,8 +875,11 @@ public class RobotBrain : Agent
         sensor.AddObservation(Mathf.Clamp01(stepsSinceLastDetection / Mathf.Max(1f, noDetectionSteps)));
 
         // ----- 5. ПРЕДЫДУЩИЕ ДЕЙСТВИЯ (только один предыдущий шаг) -----
-        // Газ и руль с учётом клиппинга
-        sensor.AddObservation(prevGas);
+        // Предыдущие газ и руль в едином policy-диапазоне -1..1.
+        float maxLinearCommand = trackController != null
+            ? Mathf.Max(Mathf.Epsilon, trackController.maxLinearCmd)
+            : 1f;
+        sensor.AddObservation(Mathf.Clamp(prevGas / maxLinearCommand, -1f, 1f));
         sensor.AddObservation(prevSteer);
         // Команда клешни: Grab/закрыть = +1, Release/открыть = -1, None = 0.
         sensor.AddObservation(EncodeGripperCommandObservation(
