@@ -105,7 +105,31 @@ public class VirtualSensors : MonoBehaviour
     public float GetLeftIR() => CastRay(leftIRPoint, irDistance) ? 1f : 0f;
     public float GetRightIR() => CastRay(rightIRPoint, irDistance) ? 1f : 0f;
     public float GetCenterIR() => GetGripperIR();
-    public float GetGripperIR() => CastRay(gripperIRPoint, gripperDistance) ? 1f : 0f;
+    public float GetGripperIR() => ReadGripperIR() ? 1f : 0f;
+
+    // Гриппер-ИК должен реагировать не только на препятствия (obstacleLayer),
+    // но и на сам мяч — у реального сенсора расстояния присутствие любого
+    // объекта в зоне действия и есть срабатывание, без понятия "луча"/конуса.
+    // Мяч намеренно не размечен как Obstacle (чтобы не путать его с
+    // препятствиями арены в остальной наблюдательной/физической логике),
+    // поэтому проверяем его отдельно — простой проверкой расстояния до точки
+    // датчика.
+    private bool ReadGripperIR()
+    {
+        if (CastRay(gripperIRPoint, gripperDistance))
+            return true;
+
+        Transform ball = robotBrain != null ? robotBrain.ball : null;
+        return IsBallNearGripper(ball);
+    }
+
+    private bool IsBallNearGripper(Transform ball)
+    {
+        if (gripperIRPoint == null || ball == null)
+            return false;
+
+        return Vector3.Distance(gripperIRPoint.position, ball.position) <= gripperDistance;
+    }
 
     /// <summary>
     /// Возвращает сырое расстояние до ближайшего препятствия в метрах (без нормализации).
@@ -153,7 +177,7 @@ public class VirtualSensors : MonoBehaviour
 
         ultrasonicMeters = GetUltrasonicMinDistance();
         leftIrTriggered = CastRay(leftIRPoint, irDistance);
-        gripperMountedIrTriggered = CastRay(gripperIRPoint, gripperDistance);
+        gripperMountedIrTriggered = ReadGripperIR();
         rightIrTriggered = CastRay(rightIRPoint, irDistance);
         return hasSensorPoints;
     }

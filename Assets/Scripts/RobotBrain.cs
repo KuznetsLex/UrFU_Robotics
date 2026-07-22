@@ -792,6 +792,24 @@ public class RobotBrain : Agent
             (int)RobotGripperCommand.None,
             (int)RobotGripperCommand.Release);
 
+        // Агент не может сам скомандовать захват — Grab от политики трактуем
+        // как None. Захват возможен только рефлекторно, по срабатыванию
+        // гриппер-ИК (ниже). Release агента не трогаем — отпустить мяч агент
+        // по-прежнему решает сам.
+        if (gripCommand == RobotGripperCommand.Grab)
+            gripCommand = RobotGripperCommand.None;
+
+        // Рефлекторное закрытие клешни по ИК-датчику — единственный способ
+        // захватить мяч. Не перебивает явный Release (иначе, пока мяч всё ещё
+        // лежит у сенсора сразу после отпускания/при удержании, агент не смог
+        // бы разжать клешню). Только в симуляции — на реальном роботе за это
+        // отвечает сама физическая клешня/сенсор.
+        if (!useRealRobotIo && gripCommand == RobotGripperCommand.None &&
+            sensors != null && sensors.GetGripperIR() > 0.5f)
+        {
+            gripCommand = RobotGripperCommand.Grab;
+        }
+
         // Применяем клиппинг газа с учётом maxLinearCmd (как в TrackController)
         float maxLinearCommand = trackController != null
             ? Mathf.Max(0f, trackController.maxLinearCmd)

@@ -159,10 +159,19 @@ namespace Team11.Ros
             }
 
             bool hasGripperState = TryGetGripperState(out bool isGripperOpen);
+
+            // На реальном роботе нет физического мяча Unity, который можно было бы
+            // спросить напрямую — "захвачен ли мяч" определяем по гриппер-ИК
+            // (centerIrTriggered, физически перенесён на захват): что-то зажато между
+            // губок клешни только когда клешня закрыта и датчик свежий и сработавший.
+            bool sensorDataFresh = lastSensorMessageTime >= 0f &&
+                Time.unscaledTime - lastSensorMessageTime <= SensorTimeoutSeconds;
+            bool isGrabbing = !isGripperOpen && sensorDataFresh && centerIrTriggered;
+
             return new RobotCommandResult(
                 hasGripperState,
                 isGripperOpen,
-                false,
+                isGrabbing,
                 RobotGripAttemptResult.None);
         }
 
