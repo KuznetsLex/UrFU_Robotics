@@ -13,7 +13,7 @@
 
 Использование:
     conda activate mlagents
-    # PNG-картинки (по умолчанию):
+    # PNG-картинки для одного эксперимента (по умолчанию):
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain
 
     # Отдельный "run" в самом TensorBoard (карточка "RewardsByEpisode"),
@@ -30,6 +30,13 @@
     # дописывает новые точки в тот же файл (не пересоздаёт его), пока не
     # остановишь (Ctrl+C):
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain --mode tensorboard --watch --interval 30
+
+    # Мониторить ВСЕ эксперименты разом: вместо конкретного <run-id>/<Brain>
+    # указываете корень results/ и добавляете --all — скрипт сам находит все
+    # папки с events.out.tfevents.* внутри и ведёт по отдельному writer'у на
+    # каждую (см. discover_brain_dirs). Новые прогоны, появившиеся после
+    # старта, тоже подхватятся на следующей итерации --watch.
+    python tools/plot_rewards_by_episode.py results --all --mode tensorboard --watch --interval 30
 """
 
 import argparse
@@ -48,6 +55,26 @@ TB_NEW_PREFIX = "RewardsByEpisode/"
 # обычные Rewards/* по шагам — по нему отличаем "свои" файлы от настоящих
 # файлов обучения при очистке файлов от прошлых ЗАПУСКОВ этого скрипта.
 BY_EPISODE_SUFFIX = ".by_episode"
+# Папки, которые сам этот скрипт создаёт (производные данные) — при поиске
+# экспериментов в них не спускаемся, чтобы не принять их за ещё один run.
+OWN_OUTPUT_DIR_NAMES = {"by_episode", "episode_plots"}
+
+
+def discover_brain_dirs(results_root):
+    """Ищет все папки внутри results_root, где ML-Agents реально пишет
+    events.out.tfevents.* (то есть папки конкретных Brain'ов внутри
+    results/<run-id>/<Brain>), пропуская наши собственные производные
+    поддиректории (by_episode, episode_plots)."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(results_root):
+        dirnames[:] = [d for d in dirnames if d not in OWN_OUTPUT_DIR_NAMES]
+        has_real_events = any(
+            f.startswith("events.out.tfevents.") and BY_EPISODE_SUFFIX not in f
+            for f in filenames
+        )
+        if has_real_events:
+            found.append(dirpath.rstrip("/"))
+    return sorted(found)
 
 
 def load_scalars(run_dir):
@@ -112,9 +139,9 @@ class EpisodeTensorBoardWriter:
     и его фоновый reload может молча сломаться.
 
     ВАЖНО: writer всё равно должен указывать на ОТДЕЛЬНУЮ от настоящих данных
-    обучения папку (см. main()). У TensorBoard DirectoryWatcher в одной
-    директории может быть только один активно растущий event-файл — если туда
-    же писать ещё один растущий файл (даже без удаления/пересоздания), при
+    обучения папку (см. resolve_tb_out_dir()). У TensorBoard DirectoryWatcher в
+    одной директории может быть только один активно растущий event-файл — если
+    туда же писать ещё один растущий файл (даже без удаления/пересоздания), при
     появлении нашего файла DirectoryWatcher посчитает файл обучения
     "завершённым" и перестанет видеть его дальнейшие обновления
     (см. github.com/tensorflow/tensorboard/issues/349 и связанные комментарии
@@ -156,7 +183,15 @@ class EpisodeTensorBoardWriter:
         self.writer.close()
 
 
-def run_once(run_dir, mode, out_dir, tb_writer):
+def resolve_tb_out_dir(run_dir, out_dir_override):
+    # ОБЯЗАТЕЛЬНО отдельная папка от run_dir — см. docstring EpisodeTensorBoardWriter.
+    return out_dir_override if out_dir_override else os.path.join(os.path.dirname(run_dir), "by_episode")
+
+
+def process_run(run_dir, mode, out_dir, tb_writers):
+    """Обрабатывает один run_dir. tb_writers — общий на все runs словарь
+    run_dir -> EpisodeTensorBoardWriter, чтобы каждый эксперимент держал свой
+    собственный writer (а не создавался заново каждую итерацию)."""
     scalars = load_scalars(run_dir)
 
     if EPISODE_LENGTH_TAG not in scalars:
@@ -173,12 +208,38 @@ def run_once(run_dir, mode, out_dir, tb_writer):
         write_png(run_dir, png_out, scalars, ep_steps, cumulative_episodes, reward_tags)
 
     if mode in ("tensorboard", "both"):
-        tb_writer.update(scalars, ep_steps, cumulative_episodes, reward_tags)
+        if run_dir not in tb_writers:
+            tb_writers[run_dir] = EpisodeTensorBoardWriter(resolve_tb_out_dir(run_dir, out_dir))
+        tb_writers[run_dir].update(scalars, ep_steps, cumulative_episodes, reward_tags)
+
+
+def run_all_once(results_root, mode, out_dir, tb_writers, seen_runs):
+    run_dirs = discover_brain_dirs(results_root)
+    for run_dir in run_dirs:
+        if run_dir not in seen_runs:
+            seen_runs.add(run_dir)
+            print(f"найден эксперимент: {run_dir}")
+        try:
+            process_run(run_dir, mode, out_dir, tb_writers)
+        except Exception as exc:
+            # Один сломанный/ещё не готовый run не должен останавливать
+            # обработку остальных.
+            print(f"[{run_dir}] пропускаю итерацию: {exc}")
+    return run_dirs
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("run_dir", help="Папка с events.out.tfevents.* (например results/.../GFSX_Brain)")
+    parser.add_argument(
+        "run_dir",
+        help="Папка с events.out.tfevents.* (например results/.../GFSX_Brain). "
+             "С флагом --all — корень для поиска всех экспериментов (например results)",
+    )
+    parser.add_argument(
+        "--all", action="store_true",
+        help="Трактовать run_dir как корень и обрабатывать ВСЕ найденные внутри "
+             "эксперименты (папки с events.out.tfevents.*) за один запуск",
+    )
     parser.add_argument(
         "--mode", choices=["png", "tensorboard", "both"], default="png",
         help="png — сохранить картинки; tensorboard — записать новый run для TensorBoard; both — оба варианта",
@@ -187,7 +248,8 @@ def main():
         "-o", "--out-dir", default=None,
         help="Для --mode png: куда сохранять PNG (по умолчанию <run_dir>/episode_plots). "
              "Для --mode tensorboard: папка нового run'а (по умолчанию results/<run-id>/by_episode — "
-             "ОБЯЗАТЕЛЬНО отдельная от run_dir, см. EpisodeTensorBoardWriter)",
+             "ОБЯЗАТЕЛЬНО отдельная от run_dir, см. EpisodeTensorBoardWriter). "
+             "Несовместимо с --all (у каждого эксперимента своя папка)",
     )
     parser.add_argument(
         "--watch", action="store_true",
@@ -200,28 +262,53 @@ def main():
     )
     args = parser.parse_args()
 
-    run_dir = args.run_dir.rstrip("/")
+    if args.all and args.out_dir:
+        raise SystemExit("--out-dir несовместим с --all: у каждого найденного эксперимента своя папка вывода")
 
-    tb_writer = None
-    if args.mode in ("tensorboard", "both"):
-        # ОБЯЗАТЕЛЬНО отдельная папка от run_dir — см. docstring
-        # EpisodeTensorBoardWriter про DirectoryWatcher и issue #349.
-        tb_out = args.out_dir if args.out_dir else os.path.join(os.path.dirname(run_dir), "by_episode")
-        tb_writer = EpisodeTensorBoardWriter(tb_out)
+    run_dir = args.run_dir.rstrip("/")
+    tb_writers = {}
 
     try:
+        if args.all:
+            seen_runs = set()
+            if not args.watch:
+                run_dirs = run_all_once(run_dir, args.mode, args.out_dir, tb_writers, seen_runs)
+                if not run_dirs:
+                    print(f"Не нашёл ни одного эксперимента (events.out.tfevents.*) внутри {run_dir}")
+                elif tb_writers:
+                    for r, w in tb_writers.items():
+                        print(f"[{r}] записано в {w.writer.log_dir}")
+                return
+
+            print(f"watch-режим (--all): пересчёт каждые {args.interval:.0f} сек, Ctrl+C для остановки")
+            while True:
+                try:
+                    run_all_once(run_dir, args.mode, args.out_dir, tb_writers, seen_runs)
+                except KeyboardInterrupt:
+                    raise
+                try:
+                    time.sleep(args.interval)
+                except KeyboardInterrupt:
+                    print("остановлено")
+                    break
+            return
+
+        # Режим одного эксперимента (как раньше)
+        if args.mode in ("tensorboard", "both"):
+            tb_writers[run_dir] = EpisodeTensorBoardWriter(resolve_tb_out_dir(run_dir, args.out_dir))
+
         if not args.watch:
-            run_once(run_dir, args.mode, args.out_dir, tb_writer)
-            if tb_writer:
-                print(f"Записано в {tb_writer.writer.log_dir} (карточка '{TB_NEW_PREFIX.rstrip('/')}' в TensorBoard)")
+            process_run(run_dir, args.mode, args.out_dir, tb_writers)
+            if run_dir in tb_writers:
+                print(f"Записано в {tb_writers[run_dir].writer.log_dir} (карточка '{TB_NEW_PREFIX.rstrip('/')}' в TensorBoard)")
             return
 
         print(f"watch-режим: пересчёт каждые {args.interval:.0f} сек, Ctrl+C для остановки")
         while True:
             try:
-                run_once(run_dir, args.mode, args.out_dir, tb_writer)
-                if tb_writer:
-                    print(f"обновлено ({sum(tb_writer.written_counts.values())} точек всего по тегам)")
+                process_run(run_dir, args.mode, args.out_dir, tb_writers)
+                if run_dir in tb_writers:
+                    print(f"обновлено ({sum(tb_writers[run_dir].written_counts.values())} точек всего по тегам)")
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
@@ -235,8 +322,8 @@ def main():
                 print("остановлено")
                 break
     finally:
-        if tb_writer:
-            tb_writer.close()
+        for writer in tb_writers.values():
+            writer.close()
 
 
 if __name__ == "__main__":
