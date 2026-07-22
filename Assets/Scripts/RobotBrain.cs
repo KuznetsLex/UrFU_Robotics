@@ -535,12 +535,12 @@ public class RobotBrain : Agent
         if (!useRealRobotIo && isTraining)
         {
             if (randomizeMass)
-                rb.mass = UnityEngine.Random.Range(1.0f, 4.0f);
+                rb.mass = UnityEngine.Random.Range(2.0f, 3.0f);
 
             if (randomizeMotorParams && trackController != null)
             {
-                trackController.moveSpeed = UnityEngine.Random.Range(0.3f, 0.7f);
-                trackController.turnSpeed = UnityEngine.Random.Range(80f, 160f);
+                trackController.moveSpeed = UnityEngine.Random.Range(4.5f, 7.5f);
+                trackController.turnSpeed = UnityEngine.Random.Range(100f, 140f);
             }
 
             if (enableCommandLatency)
