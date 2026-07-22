@@ -280,6 +280,37 @@ public class RobotBrain : Agent
     [Tooltip("Master switch for camera, robot spawn and ball spawn randomization.")]
     public bool isTraining = true;
 
+    // ==================== ДОМЕННАЯ РАНДОМИЗАЦИЯ (ДИНАМИКА) ====================
+    [Header("Domain Randomization")]
+    [Tooltip("Случайная масса корпуса (1.0-4.0) в начале каждого эпизода — для устойчивости к неточной модели инерции")]
+    public bool randomizeMass = true;
+
+    [Tooltip("Случайные moveSpeed/turnSpeed привода в начале каждого эпизода")]
+    public bool randomizeMotorParams = true;
+
+    [Tooltip("Шум ±5% на нормализованное показание ультразвука")]
+    public bool addUltrasonicNoise = true;
+
+    [Tooltip("Слепая зона камеры на несколько шагов при быстром вращении робота — имитирует смаз/потерю трекинга YOLO")]
+    public bool enableBurstDropout = true;
+
+    [Tooltip("Задержка применения команд газа/руля на несколько шагов — имитирует связь с реальным роботом")]
+    public bool enableCommandLatency = true;
+
+    // ==================== ОТКАЗЫ ДАТЧИКОВ (SENSOR FAULTS) ====================
+    [Header("Sensor Faults")]
+    [Tooltip("С вероятностью irFaultProbability инвертирует показание ИК-датчика за шаг")]
+    public bool enableIRFaults = true;
+    [Range(0f, 1f)] public float irFaultProbability = 0.1f;
+
+    [Tooltip("С вероятностью ultrasonicFaultProbability подменяет показание ультразвука случайным (имитация полного отказа датчика)")]
+    public bool enableUltrasonicFaults = true;
+    [Range(0f, 1f)] public float ultrasonicFaultProbability = 0.15f;
+
+    private Queue<float[]> actionLatencyBuffer = new Queue<float[]>();
+    private int currentActionLatencySteps = 0;
+    private int burstDropoutRemaining = 0;
+
     // ==================== ПРИВАТНЫЕ ПОЛЯ ====================
     private Rigidbody rb;
     private Vector3 startPos;
@@ -524,6 +555,40 @@ public class RobotBrain : Agent
         rb.linearVelocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
+        // Доменная рандомизация динамики — только в симуляции и только при обучении,
+        // реальный робот не подчиняется этим полям.
+        if (!useRealRobotIo && isTraining)
+        {
+            if (randomizeMass)
+                rb.mass = UnityEngine.Random.Range(1.0f, 4.0f);
+
+            if (randomizeMotorParams && trackController != null)
+            {
+                trackController.moveSpeed = UnityEngine.Random.Range(0.3f, 0.7f);
+                trackController.turnSpeed = UnityEngine.Random.Range(80f, 160f);
+            }
+
+            if (enableCommandLatency)
+            {
+                currentActionLatencySteps = UnityEngine.Random.Range(8, 14);
+                actionLatencyBuffer.Clear();
+                for (int i = 0; i < currentActionLatencySteps; i++)
+                    actionLatencyBuffer.Enqueue(new float[] { 0f, 0f });
+            }
+            else
+            {
+                currentActionLatencySteps = 0;
+                actionLatencyBuffer.Clear();
+            }
+        }
+        else
+        {
+            currentActionLatencySteps = 0;
+            actionLatencyBuffer.Clear();
+        }
+
+        burstDropoutRemaining = 0;
+
         targetVisible = false;
         stepsSinceLastDetection = 0f;
         lastKnownAngle = 0f;
@@ -655,6 +720,26 @@ public class RobotBrain : Agent
             out bool rightIr,
             out bool gripperMountedIr);
 
+        // Шум/отказы датчиков — только в симуляции при обучении, реальный робот
+        // и так даёт зашумлённые/неидеальные показания сам по себе.
+        bool simulateSensorNoise = !useRealRobotIo && isTraining;
+        if (simulateSensorNoise)
+        {
+            float maxUltrasonicDistance = sensors != null ? sensors.ultrasonicMaxDistance : 50f;
+            if (addUltrasonicNoise)
+                ultrasonicMeters += UnityEngine.Random.Range(-0.05f, 0.05f) * maxUltrasonicDistance;
+            if (enableUltrasonicFaults && UnityEngine.Random.value < ultrasonicFaultProbability)
+                ultrasonicMeters = UnityEngine.Random.Range(0f, maxUltrasonicDistance);
+            ultrasonicMeters = Mathf.Clamp(ultrasonicMeters, 0f, maxUltrasonicDistance);
+
+            if (enableIRFaults)
+            {
+                if (UnityEngine.Random.value < irFaultProbability) leftIr = !leftIr;
+                if (UnityEngine.Random.value < irFaultProbability) rightIr = !rightIr;
+                if (UnityEngine.Random.value < irFaultProbability) gripperMountedIr = !gripperMountedIr;
+            }
+        }
+
         sensor.AddObservation(ultrasonicMeters);
         sensor.AddObservation(leftIr ? 1f : 0f);
         sensor.AddObservation(rightIr ? 1f : 0f);
@@ -677,8 +762,19 @@ public class RobotBrain : Agent
             }
         }
 
-        targetVisible = targetInfo.visible;
-        if (targetInfo.visible)
+        // Burst dropout: при резком вращении с шансом 15% на несколько шагов
+        // "слепим" камеру — имитирует смаз кадра/потерю трекинга YOLO при повороте.
+        if (burstDropoutRemaining > 0)
+            burstDropoutRemaining--;
+        if (simulateSensorNoise && enableBurstDropout && rb.angularVelocity.magnitude > 0.5f &&
+            UnityEngine.Random.value < 0.15f)
+        {
+            burstDropoutRemaining = UnityEngine.Random.Range(5, 16);
+        }
+        bool effectiveVisible = targetInfo.visible && burstDropoutRemaining == 0;
+
+        targetVisible = effectiveVisible;
+        if (effectiveVisible)
         {
             lastKnownAngle = targetInfo.angle;
             lastKnownAreaRatio = targetInfo.areaRatio;
@@ -686,10 +782,10 @@ public class RobotBrain : Agent
             stepsSinceLastDetection = 0f;
         }
 
-        sensor.AddObservation(targetInfo.visible ? targetInfo.angle : lastKnownAngle);
-        sensor.AddObservation(targetInfo.visible ? targetInfo.areaRatio : lastKnownAreaRatio);
-        sensor.AddObservation(targetInfo.visible ? targetInfo.aspectRatio : lastKnownAspectRatio);
-        sensor.AddObservation(targetInfo.visible ? 1f : 0f);
+        sensor.AddObservation(effectiveVisible ? targetInfo.angle : lastKnownAngle);
+        sensor.AddObservation(effectiveVisible ? targetInfo.areaRatio : lastKnownAreaRatio);
+        sensor.AddObservation(effectiveVisible ? targetInfo.aspectRatio : lastKnownAspectRatio);
+        sensor.AddObservation(effectiveVisible ? 1f : 0f);
 
         // 3. Состояние клешни (открыта/закрыта)
         TryGetSelectedGripperState(out bool isGripperOpen);
@@ -736,7 +832,22 @@ public class RobotBrain : Agent
         float normalizedLinear = maxLinearCommand > Mathf.Epsilon
             ? clampedGas / maxLinearCommand
             : 0f;
-        var robotCommand = new RobotCommand(normalizedLinear, clampedSteer, gripCommand);
+
+        // Задержка команд: кладём свежее действие в очередь и берём то, что было
+        // отправлено currentActionLatencySteps шагов назад — имитирует связь с
+        // реальным роботом. Награды/наблюдения по-прежнему считаются от текущего
+        // (незадержанного) действия политики, задерживается только его исполнение.
+        float appliedLinear = normalizedLinear;
+        float appliedSteer = clampedSteer;
+        if (currentActionLatencySteps > 0)
+        {
+            actionLatencyBuffer.Enqueue(new float[] { normalizedLinear, clampedSteer });
+            float[] delayedAction = actionLatencyBuffer.Dequeue();
+            appliedLinear = delayedAction[0];
+            appliedSteer = delayedAction[1];
+        }
+
+        var robotCommand = new RobotCommand(appliedLinear, appliedSteer, gripCommand);
         RobotCommandResult commandResult = GetSelectedCommandSink()?.ApplyCommand(robotCommand)
             ?? RobotCommandResult.Unavailable;
 

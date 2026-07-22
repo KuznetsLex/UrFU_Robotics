@@ -63,6 +63,19 @@ RobotBrain:
   minSpawnDistance: 2
   isTraining: true
 
+  # --- Domain Randomization ---
+  randomizeMass: true
+  randomizeMotorParams: true
+  addUltrasonicNoise: true
+  enableBurstDropout: true
+  enableCommandLatency: true
+
+  # --- Sensor Faults ---
+  enableIRFaults: true
+  irFaultProbability: 0.1
+  enableUltrasonicFaults: true
+  ultrasonicFaultProbability: 0.15
+
 EnvironmentManager:
   # --- Масштабирование мира ---
   globalScale: 10
