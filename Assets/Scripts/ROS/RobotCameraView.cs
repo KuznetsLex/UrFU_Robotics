@@ -385,7 +385,8 @@ namespace Team11.Ros
             const float frameHeight = 195f;
             const float panelWidth = 280f;
             const float panelHeight = 229f;
-            var panel = new Rect(10f, 42f, panelWidth, panelHeight);
+            float panelX = Mathf.Max(10f, Screen.width - panelWidth - 16f);
+            var panel = new Rect(panelX, 16f, panelWidth, panelHeight);
             bool useRealCamera = UsesRealRobotIo();
             GUI.Box(panel, useRealCamera ? "Robot camera" : "Virtual camera");
 

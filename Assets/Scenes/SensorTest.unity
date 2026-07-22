@@ -257,6 +257,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c7e641a1846f46bdb67f7b275682ced1, type: 3}
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::SensorTestSceneSetup
+  ballPrefab: {fileID: 947487244296708059, guid: 8773bee89778e3c4d99fa415820efaf0, type: 3}
+  boxPrefab: {fileID: 5426988745256519477, guid: 78d101b4f88f740408d93593304eed40, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

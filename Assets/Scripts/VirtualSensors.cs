@@ -15,6 +15,8 @@ public class VirtualSensors : MonoBehaviour
     [Min(0f)] public float gripperDistance = 0.7f;
     [Tooltip("Максимальная дальность УЗ в Unity units. При выдаче наблюдения переводится в метры через EnvironmentManager.globalScale.")]
     public float ultrasonicMaxDistance = 50f;
+    [Tooltip("Unity units на метр для сцен без EnvironmentManager, например SensorTest.")]
+    [Min(0.01f)] public float fallbackWorldUnitsPerMeter = 10f;
     public int ultrasonicRayCount = 10;
     public float ultrasonicAngle = 45f;
     public LayerMask obstacleLayer;
@@ -82,7 +84,7 @@ public class VirtualSensors : MonoBehaviour
             : null;
         return environment != null
             ? Mathf.Max(Mathf.Epsilon, environment.globalScale)
-            : 1f;
+            : Mathf.Max(0.01f, fallbackWorldUnitsPerMeter);
     }
 
     public bool TryReadSimulationSensors(

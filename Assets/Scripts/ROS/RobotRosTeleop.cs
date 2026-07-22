@@ -52,6 +52,14 @@ namespace Team11.Ros
                 return;
             }
 
+            // SensorTest owns its simulation HUD and camera preview. Installing
+            // the ROS teleop there would draw a second HUD and connect to the
+            // physical robot from a scene intended only for virtual sensor checks.
+            if (FindAnyObjectByType<SensorTestSceneSetup>() != null)
+            {
+                return;
+            }
+
             // Во время обучения (сцена с RobotBrain.isTraining = true) не подключаемся
             // к реальному роботу вообще: иначе WASD, нажатый случайно во время
             // наблюдения за тренировкой, уйдёт как команда на физического робота.
@@ -307,7 +315,9 @@ namespace Team11.Ros
         {
             const int width = 440;
             const int height = 226;
-            var panel = new Rect(Screen.width - width - 10, 10, width, height);
+            const float cameraPanelHeight = 229f;
+            float panelX = Mathf.Max(10f, Screen.width - width - 16f);
+            var panel = new Rect(panelX, 16f + cameraPanelHeight + 12f, width, height);
 
             if (robotBrain == null)
             {
