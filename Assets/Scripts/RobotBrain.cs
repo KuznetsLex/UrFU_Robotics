@@ -326,8 +326,7 @@ public class RobotBrain : Agent
     private Vector2 arenaHalfExtents = new Vector2(15f, 30f);
 
     // Статистика эпизода для TensorBoard
-    private Dictionary<string, float> rewardSumDict;
-    private Dictionary<string, int> rewardCountDict;
+    private float cameraRewardSum;
     private int episodeStepCounter;
     private bool statsSent;
     private RobotRosTeleop robotSensorReceiver;
@@ -382,8 +381,7 @@ public class RobotBrain : Agent
                 : 0f;
         }
 
-        rewardSumDict = new Dictionary<string, float>();
-        rewardCountDict = new Dictionary<string, int>();
+        cameraRewardSum = 0f;
         episodeStepCounter = 0;
         statsSent = false;
         cameraScoreSum = 0f;
@@ -452,16 +450,7 @@ public class RobotBrain : Agent
         }
 
         // Сброс статистики
-        rewardSumDict.Clear();
-        rewardCountDict.Clear();
-        // Эти типы попадают в AddRewardWithStats только при наступлении события
-        // (захват зоны, успешный грип и т.п.), поэтому без заглушки эпизоды без такого
-        // события не попадали бы в Rewards/*Reward_Sum|_Count|_Avg вовсе.
-        foreach (string type in new[] { "CameraReward", "GrabZoneReward", "DistanceReward", "GripReward" })
-        {
-            rewardSumDict[type] = 0f;
-            rewardCountDict[type] = 0;
-        }
+        cameraRewardSum = 0f;
         episodeStepCounter = 0;
         statsSent = false;
         cameraScoreSum = 0f;
@@ -864,6 +853,7 @@ public class RobotBrain : Agent
                 cameraReward = Mathf.Clamp(cameraReward, -cameraRewardClamp, cameraRewardClamp);
 
             AddRewardWithStats("CameraReward", cameraReward);
+            cameraRewardSum += cameraReward;
             cameraScoreSum += currentCameraScore;
             cameraMeasurementCount++;
 
@@ -965,7 +955,7 @@ public class RobotBrain : Agent
         if (!useRealRobotIo && commandResult.IsGrabbing)
         {
             AddRewardWithStats("GripReward", gripReward);
-            SendStatsToTensorBoard();
+            SendStatsToTensorBoard(episodeSucceeded: true);
             EndEpisode();
             return;
         }
@@ -984,7 +974,7 @@ public class RobotBrain : Agent
         if (outsideArena)
         {
             AddRewardWithStats("OutOfBounds", outOfBoundsPenalty);
-            SendStatsToTensorBoard();
+            SendStatsToTensorBoard(episodeSucceeded: false);
             EndEpisode();
             return;
         }
@@ -992,7 +982,7 @@ public class RobotBrain : Agent
         // MaxStep завершается внутри ML-Agents сразу после OnActionReceived.
         // Отправляем пользовательскую статистику до автоматического сброса награды.
         if (MaxStep > 0 && StepCount >= MaxStep)
-            SendStatsToTensorBoard();
+            SendStatsToTensorBoard(episodeSucceeded: false);
     }
 
     private void OnCollisionEnter(Collision collision)
@@ -1064,16 +1054,21 @@ public class RobotBrain : Agent
     private void AddRewardWithStats(string type, float reward)
     {
         AddReward(reward);
-        if (!rewardSumDict.ContainsKey(type))
-        {
-            rewardSumDict[type] = 0f;
-            rewardCountDict[type] = 0;
-        }
-        rewardSumDict[type] += reward;
-        rewardCountDict[type] += 1;
+
+        // Sum/Count теперь считаются напрямую по шагам средствами самого
+        // ML-Agents (StatAggregationMethod.Sum суммирует все значения,
+        // добавленные за окно summary_freq), а не по словарю, сбрасываемому
+        // каждый эпизод — то есть без привязки к границам эпизодов. Avg
+        // сознательно убран: он был средним ПО ЭПИЗОДАМ, что здесь больше
+        // не имеет смысла.
+        var statsRecorder = Academy.Instance.StatsRecorder;
+        if (statsRecorder == null) return;
+
+        statsRecorder.Add($"Rewards/{type}_Sum", reward, StatAggregationMethod.Sum);
+        statsRecorder.Add($"Rewards/{type}_Count", 1f, StatAggregationMethod.Sum);
     }
 
-    private void SendStatsToTensorBoard()
+    private void SendStatsToTensorBoard(bool episodeSucceeded)
     {
         if (statsSent) return;
         statsSent = true;
@@ -1083,25 +1078,18 @@ public class RobotBrain : Agent
 
         statsRecorder.Add("Rewards/TotalEpisodeReward", GetCumulativeReward());
         statsRecorder.Add("Rewards/EpisodeLength", episodeStepCounter);
+        // Успех = эпизод завершился взятием мяча (см. вызовы SendStatsToTensorBoard).
+        // 0/1 на эпизод, StatAggregationMethod.Average сам даёт долю успешных
+        // эпизодов за окно summary_freq — то есть готовый процент в [0, 1].
+        // Префикс "Environment/" — чтобы попасть в ту же карточку TensorBoard,
+        // что и штатные Environment/Cumulative Reward и Environment/Episode Length.
+        statsRecorder.Add("Environment/Success Rate", episodeSucceeded ? 1f : 0f, StatAggregationMethod.Average);
         statsRecorder.Add(
             "Camera/Score",
             cameraMeasurementCount > 0 ? cameraScoreSum / cameraMeasurementCount : 0f);
-        rewardSumDict.TryGetValue("CameraReward", out float cameraRewardSum);
         statsRecorder.Add("Camera/Reward", cameraRewardSum);
         statsRecorder.Add("Camera/Measurements", cameraMeasurementCount);
         statsRecorder.Add("Camera/TargetAcquired", targetAcquiredCount);
         statsRecorder.Add("Camera/TargetLost", targetLostCount);
-
-        foreach (var kvp in rewardSumDict)
-        {
-            string type = kvp.Key;
-            float sum = kvp.Value;
-            int count = rewardCountDict[type];
-            float avg = count > 0 ? sum / count : 0f;
-
-            statsRecorder.Add($"Rewards/{type}_Sum", sum);
-            statsRecorder.Add($"Rewards/{type}_Count", count);
-            statsRecorder.Add($"Rewards/{type}_Avg", avg);
-        }
     }
 }
