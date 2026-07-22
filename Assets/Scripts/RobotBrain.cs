@@ -317,6 +317,8 @@ public class RobotBrain : Agent
     private bool statsSent;
     private RobotRosTeleop robotSensorReceiver;
     private RealVision realVision;
+    private DiagnosticLogger diagLogger;
+    private int arenaIndex;
     private SimulationRobotCommandSink simulationCommandSink;
     private int pendingCollisionPenalties;
     private float nextCollisionPenaltyTime;
@@ -339,6 +341,10 @@ public class RobotBrain : Agent
 
     public override void Initialize()
     {
+        diagLogger = GetComponent<DiagnosticLogger>();
+        arenaIndex = ResolveArenaIndex();
+        diagLogger?.SetArenaIndex(arenaIndex);
+
         startPos = rb.position;
         initialStartPos = startPos;
         startRot = rb.rotation;
@@ -374,6 +380,23 @@ public class RobotBrain : Agent
     private static bool IsLoadedSceneObject(Transform target)
     {
         return target != null && target.gameObject.scene.IsValid() && target.gameObject.scene.isLoaded;
+    }
+
+    // ArenaSpawner группирует каждую копию арены под корнем "Arena_{N}" и
+    // парentит робота прямо под ним (см. ArenaSpawner.WireArena), поэтому
+    // transform.parent.name у робота — это и есть его арена. Без ArenaSpawner
+    // в сцене (одиночный тест) вернёт -1.
+    private int ResolveArenaIndex()
+    {
+        const string prefix = "Arena_";
+        Transform parent = transform.parent;
+        if (parent != null && parent.name.StartsWith(prefix) &&
+            int.TryParse(parent.name.Substring(prefix.Length), out int index))
+        {
+            return index;
+        }
+
+        return -1;
     }
 
     private IRobotCommandSink GetSelectedCommandSink()
@@ -860,6 +883,26 @@ public class RobotBrain : Agent
         prevGas = clampedGas;
         prevSteer = clampedSteer;
         previousGripCommand = (int)gripCommand;
+
+        // ---------- ДИАГНОСТИЧЕСКОЕ ЛОГИРОВАНИЕ (Sim-to-Real) ----------
+        if (diagLogger != null)
+        {
+            TryGetSelectedRangeSensors(
+                out float diagUltrasonic,
+                out bool diagLeftIr,
+                out bool diagRightIr,
+                out _);
+            float diagGripperIr = sensors != null ? sensors.GetGripperIR() : 0f;
+
+            diagLogger.LogStep(
+                StepCount, arenaIndex,
+                targetVisible, lastKnownAngle, lastDistanceToBall,
+                diagUltrasonic, diagLeftIr ? 1 : 0, diagRightIr ? 1 : 0, Mathf.RoundToInt(diagGripperIr),
+                0f, // camYaw: в этом проекте нет отдельного привода поворота камеры
+                clampedGas, clampedSteer, commandResult.IsGrabbing,
+                rb.position.x - startPos.x, rb.position.z - startPos.z,
+                transform.eulerAngles.y / 360f, rb.linearVelocity.magnitude);
+        }
 
         // ---------- ПРОВЕРКИ ЗАВЕРШЕНИЯ ЭПИЗОДА ----------
 

@@ -16,7 +16,8 @@
     # PNG-картинки (по умолчанию):
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain
 
-    # Отдельный "run" в самом TensorBoard (карточка "RewardsByEpisode"):
+    # Отдельный "run" в самом TensorBoard (карточка "RewardsByEpisode"),
+    # пишется в results/small_input_rand_ball_fix/by_episode:
     python tools/plot_rewards_by_episode.py results/small_input_rand_ball_fix/GFSX_Brain --mode tensorboard
 
     # То же самое, но в фоне, пока идёт обучение: пересчитывает и перезаписывает
@@ -134,7 +135,10 @@ def run_once(run_dir, mode, out_dir):
         write_png(run_dir, png_out, scalars, ep_steps, cumulative_episodes, reward_tags)
 
     if mode in ("tensorboard", "both"):
-        tb_out = out_dir if mode == "tensorboard" and out_dir else f"{run_dir}_by_episode"
+        # По умолчанию — "by_episode" прямо внутри папки run-id (родитель run_dir,
+        # т.к. run_dir указывает на конкретный Brain внутри results/<run-id>/<Brain>),
+        # а не рядом с папкой Brain'а с суффиксом.
+        tb_out = out_dir if mode == "tensorboard" and out_dir else os.path.join(os.path.dirname(run_dir), "by_episode")
         write_tensorboard(tb_out, scalars, ep_steps, cumulative_episodes, reward_tags)
 
 
@@ -148,7 +152,7 @@ def main():
     parser.add_argument(
         "-o", "--out-dir", default=None,
         help="Для --mode png: куда сохранять PNG (по умолчанию <run_dir>/episode_plots). "
-             "Для --mode tensorboard: папка нового run'а (по умолчанию <run_dir>_by_episode, соседняя с исходной)",
+             "Для --mode tensorboard: папка нового run'а (по умолчанию results/<run-id>/by_episode)",
     )
     parser.add_argument(
         "--watch", action="store_true",
