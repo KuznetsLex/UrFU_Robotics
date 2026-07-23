@@ -25,6 +25,12 @@ public class EnvironmentManager : MonoBehaviour
     [Tooltip("Максимальное расстояние (в мировых юнитах) от мяча до стены, противоположной старту робота")]
     public float maxBallDistanceFromFarWall = 1.15f;
 
+    [Header("Стартовая зона робота")]
+    [Tooltip("Ширина зоны спавна робота по X, доля от доступной ширины арены (1 = во всю ширину за вычетом отступа от стен)")]
+    [Range(0.05f, 1f)] public float robotSpawnWidthFraction = 1f;
+    [Tooltip("Глубина зоны спавна робота от ближней (стартовой) стены к центру арены, в базовых единицах (умножается на globalScale)")]
+    [Min(0f)] public float robotSpawnDepth = 1.5f;
+
     [Header("Настройки границ (Стены)")]
     public bool createWalls = true;       // Создавать ли физические границы
     public bool visibleWalls = true;      // Оставить ли стены видимыми (MeshRenderer)
@@ -192,10 +198,14 @@ public class EnvironmentManager : MonoBehaviour
         // сохраняем текущую высоту робота/мяча относительно арены, меняя только X/Z.
         float robotY = robot.position.y - transform.position.y;
 
+        // Зона спавна робота: по X — доля от доступной ширины арены
+        // (robotSpawnWidthFraction), по Z — полоса заданной глубины от
+        // ближней (стартовой) стены к центру (robotSpawnDepth).
+        float robotHalfX = halfX * robotSpawnWidthFraction;
         Vector3 startPos = transform.position + new Vector3(
-            Random.Range(-halfX, halfX),
+            Random.Range(-robotHalfX, robotHalfX),
             robotY,
-            Random.Range(-halfZ, -halfZ + 1.5f * globalScale)
+            Random.Range(-halfZ, -halfZ + robotSpawnDepth * globalScale)
         );
         Quaternion startRot = Quaternion.Euler(0, Random.Range(-45f, 45f), 0);
 

@@ -84,6 +84,10 @@ EnvironmentManager:
   scatterMargin: 0.5
   maxBallDistanceFromFarWall: 1.15
 
+  # --- Стартовая зона робота ---
+  robotSpawnWidthFraction: 1
+  robotSpawnDepth: 1
+
   # --- Настройки границ (Стены) ---
   createWalls: true
   visibleWalls: true
