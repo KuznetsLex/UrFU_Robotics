@@ -34,8 +34,13 @@ public class VirtualSensors : MonoBehaviour
     private RobotBrain robotBrain;
 
     private bool baseSensorTransformsCaptured;
-    private Vector3 baseLeftIRLocalPos, baseRightIRLocalPos, baseGripperIRLocalPos, baseUltrasonicLocalPos;
-    private Quaternion baseLeftIRLocalRot, baseRightIRLocalRot, baseGripperIRLocalRot, baseUltrasonicLocalRot;
+    // Мировые (не локальные!) позиция/поворот — у точек датчиков в риге
+    // встречаются родители с сильным неравномерным масштабом (например,
+    // ×100), из-за чего джиттер в localPosition даёт непредсказуемо большое
+    // смещение в мире. В world space величина джиттера всегда означает одно
+    // и то же физическое смещение, независимо от масштаба родителя.
+    private Vector3 baseLeftIRPos, baseRightIRPos, baseGripperIRPos, baseUltrasonicPos;
+    private Quaternion baseLeftIRRot, baseRightIRRot, baseGripperIRRot, baseUltrasonicRot;
 
     private void Awake()
     {
@@ -56,10 +61,10 @@ public class VirtualSensors : MonoBehaviour
         if (baseSensorTransformsCaptured)
             return;
 
-        if (leftIRPoint != null) { baseLeftIRLocalPos = leftIRPoint.localPosition; baseLeftIRLocalRot = leftIRPoint.localRotation; }
-        if (rightIRPoint != null) { baseRightIRLocalPos = rightIRPoint.localPosition; baseRightIRLocalRot = rightIRPoint.localRotation; }
-        if (gripperIRPoint != null) { baseGripperIRLocalPos = gripperIRPoint.localPosition; baseGripperIRLocalRot = gripperIRPoint.localRotation; }
-        if (ultrasonicPoint != null) { baseUltrasonicLocalPos = ultrasonicPoint.localPosition; baseUltrasonicLocalRot = ultrasonicPoint.localRotation; }
+        if (leftIRPoint != null) { baseLeftIRPos = leftIRPoint.position; baseLeftIRRot = leftIRPoint.rotation; }
+        if (rightIRPoint != null) { baseRightIRPos = rightIRPoint.position; baseRightIRRot = rightIRPoint.rotation; }
+        if (gripperIRPoint != null) { baseGripperIRPos = gripperIRPoint.position; baseGripperIRRot = gripperIRPoint.rotation; }
+        if (ultrasonicPoint != null) { baseUltrasonicPos = ultrasonicPoint.position; baseUltrasonicRot = ultrasonicPoint.rotation; }
         baseSensorTransformsCaptured = true;
     }
 
@@ -73,20 +78,20 @@ public class VirtualSensors : MonoBehaviour
             return;
         }
 
-        JitterTransform(leftIRPoint, baseLeftIRLocalPos, baseLeftIRLocalRot);
-        JitterTransform(rightIRPoint, baseRightIRLocalPos, baseRightIRLocalRot);
-        JitterTransform(gripperIRPoint, baseGripperIRLocalPos, baseGripperIRLocalRot);
-        JitterTransform(ultrasonicPoint, baseUltrasonicLocalPos, baseUltrasonicLocalRot);
+        JitterTransform(leftIRPoint, baseLeftIRPos, baseLeftIRRot);
+        JitterTransform(rightIRPoint, baseRightIRPos, baseRightIRRot);
+        JitterTransform(gripperIRPoint, baseGripperIRPos, baseGripperIRRot);
+        JitterTransform(ultrasonicPoint, baseUltrasonicPos, baseUltrasonicRot);
     }
 
     public void ResetSensorMounting()
     {
         CaptureBaseSensorTransforms();
 
-        if (leftIRPoint != null) leftIRPoint.SetLocalPositionAndRotation(baseLeftIRLocalPos, baseLeftIRLocalRot);
-        if (rightIRPoint != null) rightIRPoint.SetLocalPositionAndRotation(baseRightIRLocalPos, baseRightIRLocalRot);
-        if (gripperIRPoint != null) gripperIRPoint.SetLocalPositionAndRotation(baseGripperIRLocalPos, baseGripperIRLocalRot);
-        if (ultrasonicPoint != null) ultrasonicPoint.SetLocalPositionAndRotation(baseUltrasonicLocalPos, baseUltrasonicLocalRot);
+        if (leftIRPoint != null) leftIRPoint.SetPositionAndRotation(baseLeftIRPos, baseLeftIRRot);
+        if (rightIRPoint != null) rightIRPoint.SetPositionAndRotation(baseRightIRPos, baseRightIRRot);
+        if (gripperIRPoint != null) gripperIRPoint.SetPositionAndRotation(baseGripperIRPos, baseGripperIRRot);
+        if (ultrasonicPoint != null) ultrasonicPoint.SetPositionAndRotation(baseUltrasonicPos, baseUltrasonicRot);
     }
 
     private void JitterTransform(Transform point, Vector3 basePos, Quaternion baseRot)
@@ -104,7 +109,9 @@ public class VirtualSensors : MonoBehaviour
             UnityEngine.Random.Range(-sensorAngleJitter, sensorAngleJitter),
             UnityEngine.Random.Range(-sensorAngleJitter, sensorAngleJitter));
 
-        point.SetLocalPositionAndRotation(basePos + posOffset, baseRot * Quaternion.Euler(angleOffset));
+        // Мировое пространство — смещение не зависит от того, насколько
+        // сильно масштабирован родитель этой точки в цепочке рига.
+        point.SetPositionAndRotation(basePos + posOffset, baseRot * Quaternion.Euler(angleOffset));
     }
 
     // === Методы для получения показаний датчиков ===

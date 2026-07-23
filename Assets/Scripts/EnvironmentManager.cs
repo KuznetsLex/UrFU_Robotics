@@ -70,11 +70,7 @@ public class EnvironmentManager : MonoBehaviour
 
     void Update()
     {
-        // F5, а не Space — Space занят захватом мяча в RobotBrain.Heuristic() и
-        // аварийным стопом реального робота в RobotRosTeleop; при общей клавише
-        // одно нажатие Space одновременно пыталось бы схватить мяч, перегенерировать
-        // все арены и остановить реального робота.
-        if (Keyboard.current != null && Keyboard.current.f5Key.wasPressedThisFrame)
+        if (Keyboard.current != null && Keyboard.current.zKey.wasPressedThisFrame)
         {
             GenerateArena();
         }

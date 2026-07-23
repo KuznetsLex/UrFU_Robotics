@@ -184,6 +184,11 @@ MonoBehaviour:
   visibleWalls: 1
   baseWallHeight: 0.5
   wallColor: {r: 0, g: 0, b: 0, a: 1}
+  randomizeBoxCount: 1
+  boxCountRange: {x: 4, y: 10}
+  randomizeBoxMass: 1
+  boxMass: 0.5
+  boxMassRange: {x: 0.35, y: 0.65}
 --- !u!1 &555000121
 GameObject:
   m_ObjectHideFlags: 0
@@ -477,6 +482,26 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: verticalTiltRange.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: verticalTiltRange.y
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_BehaviorType
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_BrainParameters.VectorObservationSize
+      value: 15
+      objectReference: {fileID: 0}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_BrainParameters.NumStackedVectorObservations
+      value: 5
+      objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: ball
       value: 
@@ -515,27 +540,7 @@ PrefabInstance:
       objectReference: {fileID: 555000113}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: regenerateEveryEpisodes
-      value: 3
-      objectReference: {fileID: 0}
-    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_BehaviorType
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_BrainParameters.VectorObservationSize
-      value: 15
-      objectReference: {fileID: 0}
-    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_BrainParameters.NumStackedVectorObservations
-      value: 5
-      objectReference: {fileID: 0}
-    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: verticalTiltRange.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: verticalTiltRange.y
-      value: 10
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_Name
