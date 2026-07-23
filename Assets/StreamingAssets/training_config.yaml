@@ -47,11 +47,9 @@ RobotBrain:
 
   # --- Коэффициенты наград (дополнительные) ---
   smoothnessPenaltyScale: 0.002
-  cameraRewardScale: 0.02
   cameraAngleDeadZone: 0.05
-  cameraRewardClamp: 0.02
   cameraAngleChangeThresholdDegrees: 5
-  cameraAngleChangePenaltyPerDegree: 0.001
+  cameraAngleChangePenaltyPerDegree: 0.00001
   failedGrabPenalty: -0.1
 
   # --- Speed Penalty in Grab Zone ---
@@ -60,7 +58,7 @@ RobotBrain:
   speedPenaltyAmount: -0.05
 
   # --- Training mode ---
-  isTraining: true
+  isTraining: false
 
   # --- Domain Randomization ---
   randomizeMass: true
@@ -107,7 +105,7 @@ ArenaSpawner:
   floorMargin: 1.2
 
   # --- Настройки размножения ---
-  arenaCount: 30
+  arenaCount: 1
   spacing: 100
   arenasPerRow: 4
 
@@ -138,7 +136,7 @@ VirtualSensors:
 
 SimulatedYoloCamera:
   # --- Camera simulation ---
-  maxVisibleDistance: 30
+  maxVisibleDistance: 60
   horizontalFOV: 40
   cameraAspectRatio: 1.3333333
 

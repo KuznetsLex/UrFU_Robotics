@@ -266,21 +266,14 @@ public class RobotBrain : Agent
     [Tooltip("Множитель штрафа за резкие изменения газа и руля")]
     public float smoothnessPenaltyScale = 0.002f;
 
-    [FormerlySerializedAs("angleRewardScale")]
-    [Tooltip("Масштаб потенциальной награды за улучшение положения цели в кадре")]
-    [Min(0f)] public float cameraRewardScale = 0.02f;
-
     [Tooltip("Нормализованная мёртвая зона около центра кадра, в которой camera score равен 1")]
     [Range(0f, 0.99f)] public float cameraAngleDeadZone = 0.05f;
-
-    [Tooltip("Максимальный модуль camera reward за одно новое измерение. 0 отключает ограничение.")]
-    [Min(0f)] public float cameraRewardClamp = 0.02f;
 
     [Tooltip("Изменение абсолютной цели сервопривода до этого порога не штрафуется, в градусах.")]
     [Min(0f)] public float cameraAngleChangeThresholdDegrees = 5f;
 
     [Tooltip("Штраф за каждый градус изменения цели сверх порога.")]
-    [Min(0f)] public float cameraAngleChangePenaltyPerDegree = 0.001f;
+    [Min(0f)] public float cameraAngleChangePenaltyPerDegree = 0.00001f;
 
     [Tooltip("Штраф за неудачную попытку захвата (клешня закрыта или мяч вне зоны)")]
     public float failedGrabPenalty = -0.1f;
@@ -352,7 +345,6 @@ public class RobotBrain : Agent
     private float prevGas;
     private float prevSteer;
     private float previousCameraPanTarget;
-    private float previousCameraScore;
     private bool previousCameraVisible;
     private bool cameraMeasurementPending;
     private bool hasSeenCameraMeasurement;
@@ -372,7 +364,6 @@ public class RobotBrain : Agent
     private Vector2 arenaHalfExtents = new Vector2(15f, 30f);
 
     // Статистика эпизода для TensorBoard
-    private float cameraRewardSum;
     private int episodeStepCounter;
     private bool statsSent;
     private RobotRosTeleop robotSensorReceiver;
@@ -440,7 +431,6 @@ public class RobotBrain : Agent
                 : 0f;
         }
 
-        cameraRewardSum = 0f;
         episodeStepCounter = 0;
         statsSent = false;
         cameraScoreSum = 0f;
@@ -554,7 +544,6 @@ public class RobotBrain : Agent
         }
 
         // Сброс статистики
-        cameraRewardSum = 0f;
         episodeStepCounter = 0;
         statsSent = false;
         cameraScoreSum = 0f;
@@ -668,7 +657,6 @@ public class RobotBrain : Agent
         lastKnownAspectRatio = 0f;
         prevGas = 0f;
         prevSteer = 0f;
-        previousCameraScore = 0f;
         previousCameraVisible = false;
         cameraMeasurementPending = false;
         hasSeenCameraMeasurement = false;
@@ -1112,12 +1100,6 @@ public class RobotBrain : Agent
                 currentCameraScore = 1f - normalizedError;
             }
 
-            float cameraReward = cameraRewardScale * (currentCameraScore - previousCameraScore);
-            if (cameraRewardClamp > 0f)
-                cameraReward = Mathf.Clamp(cameraReward, -cameraRewardClamp, cameraRewardClamp);
-
-            AddRewardWithStats("CameraReward", cameraReward);
-            cameraRewardSum += cameraReward;
             cameraScoreSum += currentCameraScore;
             cameraMeasurementCount++;
 
@@ -1126,7 +1108,6 @@ public class RobotBrain : Agent
             else if (!targetVisible && previousCameraVisible)
                 targetLostCount++;
 
-            previousCameraScore = currentCameraScore;
             previousCameraVisible = targetVisible;
         }
 
@@ -1403,7 +1384,6 @@ public class RobotBrain : Agent
         statsRecorder.Add(
             "Camera/Score",
             cameraMeasurementCount > 0 ? cameraScoreSum / cameraMeasurementCount : 0f);
-        statsRecorder.Add("Camera/Reward", cameraRewardSum);
         statsRecorder.Add("Camera/Measurements", cameraMeasurementCount);
         statsRecorder.Add("Camera/TargetAcquired", targetAcquiredCount);
         statsRecorder.Add("Camera/TargetLost", targetLostCount);

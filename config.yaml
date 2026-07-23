@@ -25,3 +25,8 @@ behaviors:
     max_steps: 15000000
     time_horizon: 2000
     summary_freq: 20000
+
+env_settings:
+  # ONNX export of the recurrent policy can pause environment communication
+  # for longer than the 60-second default on CPU-only Windows machines.
+  timeout_wait: 300
