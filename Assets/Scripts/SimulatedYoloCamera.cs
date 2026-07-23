@@ -29,15 +29,26 @@ public class SimulatedYoloCamera : MonoBehaviour
     public Vector2 detectionDropoutRange = new Vector2(0f, 0.1f);
     [Tooltip("Range for camera latency measured in agent camera observations.")]
     public Vector2Int latencyMeasurementsRange = new Vector2Int(0, 2);
+    [Tooltip("Suppress simulated detections while the camera rotates too quickly relative to the world.")]
+    public bool simulateMotionBlurDropout = true;
+    [Tooltip("Per-episode world angular-speed threshold range in radians per second.")]
+    public Vector2 motionBlurAngularSpeedThresholdRange = new Vector2(0.6f, 0.85f);
+    [Tooltip("Keep detections suppressed for this long after camera angular speed falls below the threshold.")]
+    [Min(0f)] public float motionBlurRecoverySeconds = 0.2f;
 
     [Header("Current sensor effects")]
     [SerializeField, Min(0f)] private float angleNoiseStdDev;
     [SerializeField, Range(0f, 1f)] private float detectionDropoutProbability;
     [SerializeField, Min(0)] private int latencyMeasurements;
+    [SerializeField, Min(0f)] private float motionBlurAngularSpeedThreshold = 0.725f;
+    [SerializeField, Min(0f)] private float worldAngularSpeedRadiansPerSecond;
+    [SerializeField, Min(0f)] private float motionBlurRecoveryRemaining;
 
     private bool baseParametersCaptured;
     private float baseHorizontalFOV;
     private Quaternion baseLocalRotation;
+    private Quaternion previousWorldRotation;
+    private bool hasPreviousWorldRotation;
     private ulong measurementVersion;
     private Transform sensorOwnerRoot;
     private readonly Queue<(float angle, float areaRatio, float aspectRatio, bool visible)>
@@ -48,6 +59,12 @@ public class SimulatedYoloCamera : MonoBehaviour
     /// uses it to apply camera shaping only once per measurement.
     /// </summary>
     public virtual ulong MeasurementVersion => measurementVersion;
+    public float WorldAngularSpeedRadiansPerSecond => worldAngularSpeedRadiansPerSecond;
+    public float MotionBlurAngularSpeedThreshold => motionBlurAngularSpeedThreshold;
+    public bool MotionBlurDropoutActive =>
+        simulateMotionBlurDropout &&
+        (worldAngularSpeedRadiansPerSecond > motionBlurAngularSpeedThreshold ||
+         motionBlurRecoveryRemaining > 0f);
 
     [Header("References")]
     public Transform targetBall;
@@ -62,6 +79,48 @@ public class SimulatedYoloCamera : MonoBehaviour
 
         RobotBrain owner = GetComponentInParent<RobotBrain>();
         sensorOwnerRoot = owner != null ? owner.transform : transform;
+        ResetMotionBlurState();
+    }
+
+    private void OnEnable()
+    {
+        ResetMotionBlurState();
+    }
+
+    private void FixedUpdate()
+    {
+        Quaternion currentWorldRotation = transform.rotation;
+        if (!hasPreviousWorldRotation)
+        {
+            previousWorldRotation = currentWorldRotation;
+            hasPreviousWorldRotation = true;
+            worldAngularSpeedRadiansPerSecond = 0f;
+            return;
+        }
+
+        float deltaTime = Mathf.Max(Time.fixedDeltaTime, Mathf.Epsilon);
+        worldAngularSpeedRadiansPerSecond =
+            Quaternion.Angle(previousWorldRotation, currentWorldRotation) *
+            Mathf.Deg2Rad /
+            deltaTime;
+        previousWorldRotation = currentWorldRotation;
+
+        if (!simulateMotionBlurDropout)
+        {
+            motionBlurRecoveryRemaining = 0f;
+            return;
+        }
+
+        if (worldAngularSpeedRadiansPerSecond > motionBlurAngularSpeedThreshold)
+        {
+            motionBlurRecoveryRemaining = Mathf.Max(0f, motionBlurRecoverySeconds);
+        }
+        else
+        {
+            motionBlurRecoveryRemaining = Mathf.Max(
+                0f,
+                motionBlurRecoveryRemaining - deltaTime);
+        }
     }
 
     // Переиспользуемый буфер для RaycastNonAlloc — на RaycastAll здесь раньше
@@ -109,6 +168,10 @@ public class SimulatedYoloCamera : MonoBehaviour
         {
             angleNoiseStdDev = SampleRange(angleNoiseStdDevRange, 0f, float.PositiveInfinity);
             detectionDropoutProbability = SampleRange(detectionDropoutRange, 0f, 1f);
+            motionBlurAngularSpeedThreshold = SampleRange(
+                motionBlurAngularSpeedThresholdRange,
+                0f,
+                float.PositiveInfinity);
 
             int minimumLatency = Mathf.Max(0, Mathf.Min(
                 latencyMeasurementsRange.x,
@@ -123,9 +186,14 @@ public class SimulatedYoloCamera : MonoBehaviour
             angleNoiseStdDev = 0f;
             detectionDropoutProbability = 0f;
             latencyMeasurements = 0;
+            motionBlurAngularSpeedThreshold = MidpointOfRange(
+                motionBlurAngularSpeedThresholdRange,
+                0f,
+                float.PositiveInfinity);
         }
 
         delayedMeasurements.Clear();
+        ResetMotionBlurState();
     }
 
     public virtual void ResetDomainParameters()
@@ -136,7 +204,12 @@ public class SimulatedYoloCamera : MonoBehaviour
         angleNoiseStdDev = 0f;
         detectionDropoutProbability = 0f;
         latencyMeasurements = 0;
+        motionBlurAngularSpeedThreshold = MidpointOfRange(
+            motionBlurAngularSpeedThresholdRange,
+            0f,
+            float.PositiveInfinity);
         delayedMeasurements.Clear();
+        ResetMotionBlurState();
     }
 
     private void CaptureBaseParameters()
@@ -211,7 +284,10 @@ public class SimulatedYoloCamera : MonoBehaviour
         if (delayedMeasurements.Count <= latencyMeasurements)
             return (0f, 0f, 0f, false);
 
-        return delayedMeasurements.Dequeue();
+        var delayedMeasurement = delayedMeasurements.Dequeue();
+        return MotionBlurDropoutActive
+            ? (0f, 0f, 0f, false)
+            : delayedMeasurement;
     }
 
     private static float SampleRange(Vector2 range, float lowerBound, float upperBound)
@@ -219,6 +295,21 @@ public class SimulatedYoloCamera : MonoBehaviour
         float minimum = Mathf.Clamp(Mathf.Min(range.x, range.y), lowerBound, upperBound);
         float maximum = Mathf.Clamp(Mathf.Max(range.x, range.y), minimum, upperBound);
         return UnityEngine.Random.Range(minimum, maximum);
+    }
+
+    private static float MidpointOfRange(Vector2 range, float lowerBound, float upperBound)
+    {
+        float minimum = Mathf.Clamp(Mathf.Min(range.x, range.y), lowerBound, upperBound);
+        float maximum = Mathf.Clamp(Mathf.Max(range.x, range.y), minimum, upperBound);
+        return (minimum + maximum) * 0.5f;
+    }
+
+    private void ResetMotionBlurState()
+    {
+        previousWorldRotation = transform.rotation;
+        hasPreviousWorldRotation = false;
+        worldAngularSpeedRadiansPerSecond = 0f;
+        motionBlurRecoveryRemaining = 0f;
     }
 
     private static float SampleStandardNormal()

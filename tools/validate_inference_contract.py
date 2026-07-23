@@ -20,6 +20,8 @@ TELEOP = ROOT / "Assets/Scripts/ROS/RobotRosTeleop.cs"
 SERVO = ROOT / "Assets/Scripts/ROS/RobotRosServoControl.cs"
 CAMERA_VIEW = ROOT / "Assets/Scripts/ROS/RobotCameraView.cs"
 VISION = ROOT / "Assets/Scripts/ROS/RealVision.cs"
+SIMULATED_VISION = ROOT / "Assets/Scripts/SimulatedYoloCamera.cs"
+TRAINING_OVERRIDES = ROOT / "Assets/StreamingAssets/training_config.yaml"
 ROBOT_MASTER = ROOT / "robot/team1.1/unity_master_team1.py"
 ROBOT_PINOUT = ROOT / "robot/team1.1/hardware_pinout.py"
 ROBOT_START = ROOT / "robot/team1.1/start_robot_team1.1.sh"
@@ -66,6 +68,8 @@ def main() -> int:
     servo = read(SERVO)
     camera_view = read(CAMERA_VIEW)
     vision = read(VISION)
+    simulated_vision = read(SIMULATED_VISION)
+    training_overrides = read(TRAINING_OVERRIDES)
     robot = read(ROBOT_MASTER)
     pinout = read(ROBOT_PINOUT)
     start = read(ROBOT_START)
@@ -131,6 +135,12 @@ def main() -> int:
     require("RobotEndpointDiscovery.ResolveAsync()" in camera_view and
             'primaryCameraFrameUrl = $"http://{robotHost}:10002/frame.jpg"' in camera_view,
             "Unity camera view reads the discovered team1.1 frame endpoint")
+    require("Quaternion.Angle(previousWorldRotation, currentWorldRotation)" in simulated_vision and
+            "MotionBlurDropoutActive" in simulated_vision,
+            "simulated YOLO suppresses detections from camera world angular speed")
+    require("motionBlurAngularSpeedThresholdRange: [0.6, 0.85]" in training_overrides and
+            "motionBlurRecoverySeconds: 0.2" in training_overrides,
+            "training config enables randomized motion-blur threshold and recovery hold")
     require("udpPort = 5005" in vision, "Unity receives YOLO detections on UDP 5005")
 
     expected_robot_interfaces = {

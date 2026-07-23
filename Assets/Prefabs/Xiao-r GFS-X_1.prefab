@@ -2146,8 +2146,6 @@ MonoBehaviour:
   grabZoneRadius: 1
   smoothnessPenaltyScale: 0.002
   cameraAngleDeadZone: 0.05
-  cameraAngleChangeThresholdDegrees: 5
-  cameraAngleChangePenaltyPerDegree: 0.00001
   failedGrabPenalty: -0.1
   speedPenaltyThresholdLinear: 0.2
   speedPenaltyThresholdAngular: 30

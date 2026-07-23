@@ -48,8 +48,6 @@ RobotBrain:
   # --- Коэффициенты наград (дополнительные) ---
   smoothnessPenaltyScale: 0.002
   cameraAngleDeadZone: 0.05
-  cameraAngleChangeThresholdDegrees: 5
-  cameraAngleChangePenaltyPerDegree: 0.00001
   failedGrabPenalty: -0.1
 
   # --- Speed Penalty in Grab Zone ---
@@ -150,3 +148,6 @@ SimulatedYoloCamera:
   angleNoiseStdDevRange: [0, 0.03]
   detectionDropoutRange: [0, 0.1]
   latencyMeasurementsRange: [0, 2]
+  simulateMotionBlurDropout: true
+  motionBlurAngularSpeedThresholdRange: [0.6, 0.85]
+  motionBlurRecoverySeconds: 0.2
