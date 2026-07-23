@@ -56,7 +56,7 @@ RobotBrain:
   speedPenaltyAmount: -0.05
 
   # --- Training mode ---
-  isTraining: false
+  isTraining: true
 
   # --- Domain Randomization ---
   randomizeMass: true
@@ -103,7 +103,7 @@ ArenaSpawner:
   floorMargin: 1.2
 
   # --- Настройки размножения ---
-  arenaCount: 1
+  arenaCount: 50
   spacing: 100
   arenasPerRow: 4
 
