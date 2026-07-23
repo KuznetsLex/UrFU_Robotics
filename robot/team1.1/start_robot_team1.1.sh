@@ -7,6 +7,7 @@ NETWORK_NAME="team11_ros_net"
 HOST_TCP_PORT=10001
 CONTAINER_TCP_PORT=10000
 CAMERA_HTTP_PORT=10002
+ROBOT_HOST="$(hostname -I | awk '{print $1}')"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAMERA_PID_FILE="$SCRIPT_DIR/.camera_stream.pid"
 CAMERA_LOG_FILE="$SCRIPT_DIR/camera_stream.log"
@@ -152,7 +153,7 @@ if ! docker exec "$CONTAINER_NAME" bash -lc \
 fi
 
 echo
-echo "team1.1 is ready. Unity endpoint: 192.168.2.158:$HOST_TCP_PORT"
+echo "team1.1 is ready. Unity endpoint: $ROBOT_HOST:$HOST_TCP_PORT"
 echo "Robot mode: $MODE_LABEL"
 if [[ "$STEALTH_MODE" -eq 1 ]]; then
     echo "Actuators: DISABLED (motor/servo drivers were not initialized)"
@@ -161,6 +162,6 @@ echo "Velocity topic: /cmd_vel (geometry_msgs/Twist)"
 echo "Gripper topic: /cmd_gripper (std_msgs/Int32; 1=grab, 2=release)"
 echo "Camera topic: /cmd_camera_pan (std_msgs/Float32; normalized -1..1)"
 echo "Sensor topic: /sensor/data (geometry_msgs/Quaternion)"
-echo "Camera frame: http://192.168.2.158:$CAMERA_HTTP_PORT/frame.jpg"
+echo "Camera frame: http://$ROBOT_HOST:$CAMERA_HTTP_PORT/frame.jpg"
 echo "Stop safely with: $SCRIPT_DIR/stop_robot_team1.1.sh"
 echo "Diagnostics:      $SCRIPT_DIR/status_robot_team1.1.sh"

@@ -13,7 +13,6 @@ namespace Team11.Ros
     [DefaultExecutionOrder(-1000)]
     public sealed class RobotRosTeleop : MonoBehaviour, IRobotCommandSink
     {
-        private const string RobotIpAddress = "192.168.2.158";
         private const int RobotTcpPort = 10001;
         private const string CommandTopic = "/cmd_vel";
         private const string SensorDataTopic = "/sensor/data";
@@ -25,6 +24,7 @@ namespace Team11.Ros
         private const float SensorTimeoutSeconds = 1f;
 
         private ROSConnection ros;
+        private string robotHost = RobotEndpointDiscovery.HostName;
         private float nextPublishTime;
         private bool emergencyStop;
         private bool applicationHasFocus = true;
@@ -74,21 +74,32 @@ namespace Team11.Ros
             instance.AddComponent<RobotRosTeleop>();
         }
 
-        private void Awake()
+        private async void Awake()
         {
             ros = ROSConnection.GetOrCreateInstance();
+            // GetOrCreateInstance creates a ROSConnection whose package default
+            // is ConnectOnStart=true. Disable it before the first await; otherwise
+            // ROSConnection.Start() races discovery and opens 127.0.0.1:10000.
+            ros.ConnectOnStart = false;
             EnsureCameraView(ros);
-            ros.RosIPAddress = RobotIpAddress;
+            robotHost = await RobotEndpointDiscovery.ResolveAsync();
+            if (this == null)
+            {
+                return;
+            }
+
+            // Replace a connection thread that may have been created by another
+            // component or a previous Play Mode state before discovery completed.
+            ros.Disconnect();
+            ros.RosIPAddress = robotHost;
             ros.RosPort = RobotTcpPort;
             // RobotRosTeleop itself is installed after the scene loads. Do not
             // depend on whether ROSConnection.Start() has already run: own the
             // connection lifecycle explicitly and connect after configuration.
-            ros.ConnectOnStart = false;
             ros.ShowHud = true;
             ros.RegisterPublisher<TwistMsg>(CommandTopic, queue_size: 1);
             ros.Subscribe<QuaternionMsg>(SensorDataTopic, OnSensorData);
-            if (!ros.HasConnectionThread)
-                ros.Connect(RobotIpAddress, RobotTcpPort);
+            ros.Connect(robotHost, RobotTcpPort);
         }
 
         private static void EnsureCameraView(ROSConnection connection)
@@ -354,7 +365,7 @@ namespace Team11.Ros
             }
 
             GUI.Label(new Rect(panel.x + 12, panel.y + 44, width - 24, 20),
-                $"{RobotIpAddress}:{RobotTcpPort}  |  topic: {CommandTopic}");
+                $"{robotHost}:{RobotTcpPort}  |  topic: {CommandTopic}");
             GUI.Label(new Rect(panel.x + 12, panel.y + 64, width - 24, 20),
                 "Heuristic: WASD/arrows   Escape: E-STOP   Enter: reset E-STOP");
 

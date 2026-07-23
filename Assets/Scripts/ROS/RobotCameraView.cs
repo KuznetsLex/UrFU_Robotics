@@ -13,8 +13,6 @@ namespace Team11.Ros
     [DefaultExecutionOrder(-800)]
     public sealed class RobotCameraView : MonoBehaviour
     {
-        private const string PrimaryCameraFrameUrl = "http://192.168.2.158:10002/frame.jpg";
-        private const string FallbackCameraStreamUrl = "http://192.168.2.158:8081/";
         private const float RefreshIntervalSeconds = 0.1f;
         private const float FallbackConnectTimeoutSeconds = 3f;
         private const float FallbackReadTimeoutSeconds = 3f;
@@ -23,6 +21,8 @@ namespace Team11.Ros
         private const int VirtualFrameHeight = 240;
 
         private Texture2D cameraTexture;
+        private string primaryCameraFrameUrl;
+        private string fallbackCameraStreamUrl;
         private HttpClient snapshotHttpClient;
         private HttpClient streamHttpClient;
         private CancellationTokenSource streamCancellation;
@@ -110,6 +110,18 @@ namespace Team11.Ros
 
         private IEnumerator PollCamera()
         {
+            Task<string> discoveryTask = RobotEndpointDiscovery.ResolveAsync();
+            while (!discoveryTask.IsCompleted)
+            {
+                yield return null;
+            }
+
+            string robotHost = discoveryTask.Status == TaskStatus.RanToCompletion
+                ? discoveryTask.Result
+                : RobotEndpointDiscovery.HostName;
+            primaryCameraFrameUrl = $"http://{robotHost}:10002/frame.jpg";
+            fallbackCameraStreamUrl = $"http://{robotHost}:8081/";
+
             while (enabled)
             {
                 if (!UsesRealRobotIo())
@@ -119,7 +131,7 @@ namespace Team11.Ros
                     continue;
                 }
 
-                Task<byte[]> downloadTask = snapshotHttpClient.GetByteArrayAsync(PrimaryCameraFrameUrl);
+                Task<byte[]> downloadTask = snapshotHttpClient.GetByteArrayAsync(primaryCameraFrameUrl);
                 while (!downloadTask.IsCompleted)
                 {
                     yield return null;
@@ -194,7 +206,7 @@ namespace Team11.Ros
                 {
                     connectionCancellation.CancelAfter(TimeSpan.FromSeconds(FallbackConnectTimeoutSeconds));
                     connectedResponse = await streamHttpClient.GetAsync(
-                            FallbackCameraStreamUrl,
+                            fallbackCameraStreamUrl,
                             HttpCompletionOption.ResponseHeadersRead,
                             connectionCancellation.Token)
                         .ConfigureAwait(false);

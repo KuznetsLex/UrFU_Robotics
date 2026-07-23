@@ -31,7 +31,9 @@ Stop the robot safely:
 ./stop_robot_team1.1.sh
 ```
 
-Unity connects to `192.168.2.158:10001` and uses these interfaces:
+Unity discovers robot `158` automatically and connects to its current DHCP address
+on TCP port `10001`. The Raspberry Pi identity service listens on port `10003`.
+`make robot-deploy` installs and enables that identity service automatically.
 
 | Topic | ROS type | Direction |
 | --- | --- | --- |
@@ -52,7 +54,7 @@ The container keeps ROS and its internal endpoint on a dedicated Docker bridge n
 named `team11_ros_net`; only TCP port `10001` is published to the Raspberry Pi host.
 
 The robot camera is available in Unity through the team1.1 read-only camera service:
-`http://192.168.2.158:10002/frame.jpg`. When team2 already owns `/dev/video0`, the
+`http://<discovered-robot-address>:10002/frame.jpg`. When team2 already owns `/dev/video0`, the
 service relays its existing MJPEG stream from `127.0.0.1:8080` without opening the
 camera a second time or modifying the team2 process.
 

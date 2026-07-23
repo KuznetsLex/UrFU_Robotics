@@ -104,13 +104,16 @@ def main() -> int:
                 f"RobotBrain consumes continuous action {index}")
     require("actions.DiscreteActions[0]" in brain, "RobotBrain consumes discrete gripper action 0")
 
-    require('RobotIpAddress = "192.168.2.158"' in teleop and "RobotTcpPort = 10001" in teleop,
-            "Unity ROS endpoint is 192.168.2.158:10001")
+    discovery = read_text("Assets/Scripts/ROS/RobotEndpointDiscovery.cs")
+    require("RobotEndpointDiscovery.ResolveAsync()" in teleop and "RobotTcpPort = 10001" in teleop,
+            "Unity discovers robot 158 and uses ROS TCP port 10001")
+    require('ExpectedResponse = "ROBOCAMP_158"' in discovery,
+            "Unity discovery validates the robot 158 identity marker")
     require('CommandTopic = "/cmd_vel"' in teleop and "RegisterPublisher<TwistMsg>" in teleop,
             "Unity publishes geometry_msgs/Twist on /cmd_vel")
     require('SensorDataTopic = "/sensor/data"' in teleop and "Subscribe<QuaternionMsg>" in teleop,
             "Unity subscribes to geometry_msgs/Quaternion on /sensor/data")
-    require("ros.Connect(RobotIpAddress, RobotTcpPort)" in teleop,
+    require("ros.Connect(robotHost, RobotTcpPort)" in teleop,
             "Unity explicitly starts the late-installed ROS connection")
     require('GripperCommandTopic = "/cmd_gripper"' in servo and
             "RegisterPublisher<Int32Msg>" in servo,
@@ -125,8 +128,9 @@ def main() -> int:
     require("ANGLE_DRIVE_CAMERA - (yaw * CAMERA_PAN_HALF_RANGE)" in robot,
             "physical camera axis is inverted at the robot adapter boundary")
 
-    require("192.168.2.158:10002/frame.jpg" in camera_view,
-            "Unity camera view reads the team1.1 frame endpoint")
+    require("RobotEndpointDiscovery.ResolveAsync()" in camera_view and
+            'primaryCameraFrameUrl = $"http://{robotHost}:10002/frame.jpg"' in camera_view,
+            "Unity camera view reads the discovered team1.1 frame endpoint")
     require("udpPort = 5005" in vision, "Unity receives YOLO detections on UDP 5005")
 
     expected_robot_interfaces = {
