@@ -21,6 +21,7 @@ SERVO = ROOT / "Assets/Scripts/ROS/RobotRosServoControl.cs"
 CAMERA_VIEW = ROOT / "Assets/Scripts/ROS/RobotCameraView.cs"
 VISION = ROOT / "Assets/Scripts/ROS/RealVision.cs"
 ROBOT_MASTER = ROOT / "robot/team1.1/unity_master_team1.py"
+ROBOT_HARDWARE = ROOT / "robot/team1.1/robot_hardware.py"
 ROBOT_PINOUT = ROOT / "robot/team1.1/hardware_pinout.py"
 ROBOT_START = ROOT / "robot/team1.1/start_robot_team1.1.sh"
 
@@ -67,6 +68,7 @@ def main() -> int:
     camera_view = read(CAMERA_VIEW)
     vision = read(VISION)
     robot = read(ROBOT_MASTER)
+    robot_hardware = read(ROBOT_HARDWARE)
     pinout = read(ROBOT_PINOUT)
     start = read(ROBOT_START)
 
@@ -122,7 +124,7 @@ def main() -> int:
             "Unity does not resend a second set of absolute servo angles")
     require("angular = -latestCommand.Angular" in teleop,
             "policy right-positive steering is converted to ROS left-positive angular.z")
-    require("ANGLE_DRIVE_CAMERA - (yaw * CAMERA_PAN_HALF_RANGE)" in robot,
+    require("target = ANGLE_DRIVE_CAMERA - normalized * CAMERA_PAN_HALF_RANGE" in robot_hardware,
             "physical camera axis is inverted at the robot adapter boundary")
 
     require("192.168.2.158:10002/frame.jpg" in camera_view,
@@ -135,18 +137,18 @@ def main() -> int:
         "/cmd_camera_pan": "Float32",
     }
     for topic, message_type in expected_robot_interfaces.items():
-        pattern = rf"rospy\.Subscriber\('{re.escape(topic)}',\s*{message_type},"
+        pattern = rf"rospy\.Subscriber\([\"']{re.escape(topic)}[\"'],\s*{message_type},"
         require(re.search(pattern, robot) is not None,
                 f"robot subscribes to {topic} with {message_type}")
-    require("rospy.Publisher('/sensor/data', Quaternion" in robot,
+    require(re.search(r"rospy\.Publisher\(\s*[\"']/sensor/data[\"'],\s*Quaternion", robot) is not None,
             "robot publishes geometry_msgs/Quaternion on /sensor/data")
     virtual_sensors = read(ROOT / "Assets/Scripts/VirtualSensors.cs")
     require("environment.globalScale" in virtual_sensors and
             "minDist / worldUnitsPerMeter" in virtual_sensors,
             "virtual ultrasonic distance is converted from Unity units to meters via globalScale")
-    require("class SafeUltrasonic" in robot and
-            "ECHO_TIMEOUT_SECONDS = 0.03" in robot and
-            "us = SafeUltrasonic(gpio.GPIO)" in robot,
+    require("class UltrasonicSensor" in robot_hardware and
+            "ECHO_TIMEOUT_SECONDS = 0.03" in robot_hardware and
+            "self.ultrasonic = UltrasonicSensor(gpio_module)" in robot_hardware,
             "robot ultrasonic reads time out instead of blocking /sensor/data")
     expected_pinout = {
         "MOTOR_ENABLE_A_PIN": 13,
@@ -170,10 +172,10 @@ def main() -> int:
             "SENSOR_RIGHT_IR_PIN = 25" in pinout and
             "SENSOR_GRIPPER_IR_PIN = 22" in pinout,
             "robot sensor semantics match left GPIO18/right GPIO25/IR_M wiring")
-    require("gpio.IN1 = MOTOR_IN1_PIN" in robot and
-            "gpio.IN2 = MOTOR_IN2_PIN" in robot and
-            "gpio.IN3 = MOTOR_IN3_PIN" in robot and
-            "gpio.IN4 = MOTOR_IN4_PIN" in robot,
+    require("vendor_gpio.IN1 = MOTOR_IN1_PIN" in robot_hardware and
+            "vendor_gpio.IN2 = MOTOR_IN2_PIN" in robot_hardware and
+            "vendor_gpio.IN3 = MOTOR_IN3_PIN" in robot_hardware and
+            "vendor_gpio.IN4 = MOTOR_IN4_PIN" in robot_hardware,
             "normal mode applies the operational team2 motor direction ordering")
     require("HOST_TCP_PORT=10001" in start and "CAMERA_HTTP_PORT=10002" in start,
             "robot exposes ROS TCP on 10001 and camera HTTP on 10002")
@@ -189,18 +191,17 @@ def main() -> int:
         "ANGLE_CLAW_CLOSED": 83,
     }
     for name, value in expected_pose.items():
-        require(re.search(rf"^{name} = {value}$", robot, re.MULTILINE) is not None,
+        require(re.search(rf"^{name} = {value}$", robot_hardware, re.MULTILINE) is not None,
                 f"robot owns calibrated servo target {name}={value}")
-    gripper_body = re.search(
-        r"def gripper_callback\(data\):(.*?)(?=\ndef camera_callback|\n# ---)",
-        robot,
-        re.DOTALL,
-    )
-    require(gripper_body is not None and
-            "SERVO_SHOULDER" not in gripper_body.group(1) and
-            "SERVO_ELBOW" not in gripper_body.group(1) and
-            gripper_body.group(1).count("servo.set(SERVO_CLAW") == 2,
+    require("def open_gripper(self):" in robot_hardware and
+            "def close_gripper(self):" in robot_hardware and
+            robot_hardware.count("self._set(SERVO_CLAW_CHANNEL,") == 2,
             "grab/release changes only the claw servo")
+    require("class DifferentialDrive" in robot_hardware and
+            "class RobotSensors" in robot_hardware and
+            "class RobotArm" in robot_hardware and
+            "class RobotHardware" in robot_hardware,
+            "robot hardware is exposed as reusable motor, sensor, arm and aggregate classes")
 
     print("\nInference contract is consistent.")
     return 0

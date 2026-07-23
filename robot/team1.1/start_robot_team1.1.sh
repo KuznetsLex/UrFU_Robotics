@@ -32,6 +32,8 @@ sudo iw dev wlan0 set power_save off >/dev/null 2>&1 || true
 
 required_files=(
     unity_master_team1.py
+    robot_hardware.py
+    manual_robot.py
     hardware_pinout.py
     camera_stream_team1.py
     smbus.py
@@ -68,6 +70,8 @@ docker run -dt \
 
 echo "=== [2/6] Copying team1.1 nodes ==="
 docker cp "$SCRIPT_DIR/unity_master_team1.py" "$CONTAINER_NAME:/root/unity_master_team1.py"
+docker cp "$SCRIPT_DIR/robot_hardware.py" "$CONTAINER_NAME:/root/robot_hardware.py"
+docker cp "$SCRIPT_DIR/manual_robot.py" "$CONTAINER_NAME:/root/manual_robot.py"
 docker cp "$SCRIPT_DIR/hardware_pinout.py" "$CONTAINER_NAME:/root/hardware_pinout.py"
 docker cp "$SCRIPT_DIR/smbus.py" "$CONTAINER_NAME:/root/XiaoRGeek/smbus.py"
 docker cp "$SCRIPT_DIR/xr_car_light.py" "$CONTAINER_NAME:/root/XiaoRGeek/xr_car_light.py"

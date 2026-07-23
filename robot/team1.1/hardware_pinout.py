@@ -1,7 +1,7 @@
 """Physical XiaoR pinout selected for the team1.1 robot.
 
 Sources:
-  C:/Users/Slava Napalkov/Documents/Robocamp/team1.1/unity_master_team1.py
+  robot_hardware.py
   /home/pi/team2/xr_gpio.py
   /home/pi/team2/unity_master_team2.py
 

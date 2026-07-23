@@ -66,6 +66,9 @@ if ($Deploy) {
     $files = @(
         "README.md",
         "unity_master_team1.py",
+        "robot_hardware.py",
+        "manual_robot.py",
+        "test_robot_hardware.py",
         "hardware_pinout.py",
         "detect_ir_pin.py",
         "camera_stream_team1.py",
@@ -82,7 +85,7 @@ if ($Deploy) {
     if ($LASTEXITCODE -ne 0) {
         throw "Deployment failed with exit code $LASTEXITCODE"
     }
-    Invoke-Plink "cd '$RemoteDirectory' && chmod +x *.sh *.py && bash -n *.sh && python3 -m py_compile unity_master_team1.py hardware_pinout.py camera_stream_team1.py"
+    Invoke-Plink "cd '$RemoteDirectory' && sed -i 's/\r$//' *.sh && chmod +x *.sh *.py && bash -n *.sh && python3 -m py_compile unity_master_team1.py robot_hardware.py manual_robot.py hardware_pinout.py camera_stream_team1.py test_robot_hardware.py && python3 -m unittest -v test_robot_hardware.py"
     Write-Host "Robot files deployed and syntax-checked."
 }
 
