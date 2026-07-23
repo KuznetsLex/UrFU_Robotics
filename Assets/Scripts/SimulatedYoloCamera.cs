@@ -29,11 +29,11 @@ public class SimulatedYoloCamera : MonoBehaviour
     public Vector2 detectionDropoutRange = new Vector2(0f, 0.1f);
     [Tooltip("Range for camera latency measured in agent camera observations.")]
     public Vector2Int latencyMeasurementsRange = new Vector2Int(0, 2);
-    [Tooltip("Suppress simulated detections while the camera rotates too quickly relative to the world.")]
+    [Tooltip("Suppress simulated detections while the target moves too quickly across the camera view.")]
     public bool simulateMotionBlurDropout = true;
-    [Tooltip("Per-episode world angular-speed threshold range in radians per second.")]
+    [Tooltip("Per-episode threshold range for target angular speed relative to the camera, in radians per second.")]
     public Vector2 motionBlurAngularSpeedThresholdRange = new Vector2(0.6f, 0.85f);
-    [Tooltip("Keep detections suppressed for this long after camera angular speed falls below the threshold.")]
+    [Tooltip("Keep detections suppressed for this long after target angular speed falls below the threshold.")]
     [Min(0f)] public float motionBlurRecoverySeconds = 0.2f;
 
     [Header("Current sensor effects")]
@@ -41,14 +41,14 @@ public class SimulatedYoloCamera : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float detectionDropoutProbability;
     [SerializeField, Min(0)] private int latencyMeasurements;
     [SerializeField, Min(0f)] private float motionBlurAngularSpeedThreshold = 0.725f;
-    [SerializeField, Min(0f)] private float worldAngularSpeedRadiansPerSecond;
+    [SerializeField, Min(0f)] private float targetAngularSpeedRadiansPerSecond;
     [SerializeField, Min(0f)] private float motionBlurRecoveryRemaining;
 
     private bool baseParametersCaptured;
     private float baseHorizontalFOV;
     private Quaternion baseLocalRotation;
-    private Quaternion previousWorldRotation;
-    private bool hasPreviousWorldRotation;
+    private Vector3 previousTargetDirectionInCameraSpace;
+    private bool hasPreviousTargetDirection;
     private ulong measurementVersion;
     private Transform sensorOwnerRoot;
     private readonly Queue<(float angle, float areaRatio, float aspectRatio, bool visible)>
@@ -59,11 +59,11 @@ public class SimulatedYoloCamera : MonoBehaviour
     /// uses it to apply camera shaping only once per measurement.
     /// </summary>
     public virtual ulong MeasurementVersion => measurementVersion;
-    public float WorldAngularSpeedRadiansPerSecond => worldAngularSpeedRadiansPerSecond;
+    public float TargetAngularSpeedRadiansPerSecond => targetAngularSpeedRadiansPerSecond;
     public float MotionBlurAngularSpeedThreshold => motionBlurAngularSpeedThreshold;
     public bool MotionBlurDropoutActive =>
         simulateMotionBlurDropout &&
-        (worldAngularSpeedRadiansPerSecond > motionBlurAngularSpeedThreshold ||
+        (targetAngularSpeedRadiansPerSecond > motionBlurAngularSpeedThreshold ||
          motionBlurRecoveryRemaining > 0f);
 
     [Header("References")]
@@ -89,21 +89,39 @@ public class SimulatedYoloCamera : MonoBehaviour
 
     private void FixedUpdate()
     {
-        Quaternion currentWorldRotation = transform.rotation;
-        if (!hasPreviousWorldRotation)
+        if (targetBall == null)
         {
-            previousWorldRotation = currentWorldRotation;
-            hasPreviousWorldRotation = true;
-            worldAngularSpeedRadiansPerSecond = 0f;
+            hasPreviousTargetDirection = false;
+            targetAngularSpeedRadiansPerSecond = 0f;
+            return;
+        }
+
+        Vector3 directionToTarget = targetBall.position - transform.position;
+        if (directionToTarget.sqrMagnitude <= Mathf.Epsilon)
+        {
+            hasPreviousTargetDirection = false;
+            targetAngularSpeedRadiansPerSecond = 0f;
+            return;
+        }
+
+        Vector3 currentTargetDirectionInCameraSpace =
+            transform.InverseTransformDirection(directionToTarget.normalized);
+        if (!hasPreviousTargetDirection)
+        {
+            previousTargetDirectionInCameraSpace = currentTargetDirectionInCameraSpace;
+            hasPreviousTargetDirection = true;
+            targetAngularSpeedRadiansPerSecond = 0f;
             return;
         }
 
         float deltaTime = Mathf.Max(Time.fixedDeltaTime, Mathf.Epsilon);
-        worldAngularSpeedRadiansPerSecond =
-            Quaternion.Angle(previousWorldRotation, currentWorldRotation) *
+        targetAngularSpeedRadiansPerSecond =
+            Vector3.Angle(
+                previousTargetDirectionInCameraSpace,
+                currentTargetDirectionInCameraSpace) *
             Mathf.Deg2Rad /
             deltaTime;
-        previousWorldRotation = currentWorldRotation;
+        previousTargetDirectionInCameraSpace = currentTargetDirectionInCameraSpace;
 
         if (!simulateMotionBlurDropout)
         {
@@ -111,7 +129,7 @@ public class SimulatedYoloCamera : MonoBehaviour
             return;
         }
 
-        if (worldAngularSpeedRadiansPerSecond > motionBlurAngularSpeedThreshold)
+        if (targetAngularSpeedRadiansPerSecond > motionBlurAngularSpeedThreshold)
         {
             motionBlurRecoveryRemaining = Mathf.Max(0f, motionBlurRecoverySeconds);
         }
@@ -306,9 +324,9 @@ public class SimulatedYoloCamera : MonoBehaviour
 
     private void ResetMotionBlurState()
     {
-        previousWorldRotation = transform.rotation;
-        hasPreviousWorldRotation = false;
-        worldAngularSpeedRadiansPerSecond = 0f;
+        previousTargetDirectionInCameraSpace = Vector3.zero;
+        hasPreviousTargetDirection = false;
+        targetAngularSpeedRadiansPerSecond = 0f;
         motionBlurRecoveryRemaining = 0f;
     }
 

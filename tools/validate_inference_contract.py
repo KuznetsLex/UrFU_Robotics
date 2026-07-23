@@ -135,9 +135,10 @@ def main() -> int:
     require("RobotEndpointDiscovery.ResolveAsync()" in camera_view and
             'primaryCameraFrameUrl = $"http://{robotHost}:10002/frame.jpg"' in camera_view,
             "Unity camera view reads the discovered team1.1 frame endpoint")
-    require("Quaternion.Angle(previousWorldRotation, currentWorldRotation)" in simulated_vision and
+    require("transform.InverseTransformDirection(directionToTarget.normalized)" in simulated_vision and
+            "Vector3.Angle(" in simulated_vision and
             "MotionBlurDropoutActive" in simulated_vision,
-            "simulated YOLO suppresses detections from camera world angular speed")
+            "simulated YOLO suppresses detections from target angular speed relative to camera")
     require("motionBlurAngularSpeedThresholdRange: [0.6, 0.85]" in training_overrides and
             "motionBlurRecoverySeconds: 0.2" in training_overrides,
             "training config enables randomized motion-blur threshold and recovery hold")
