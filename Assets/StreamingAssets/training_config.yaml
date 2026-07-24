@@ -28,7 +28,7 @@ RobotBrain:
   wallPenalty: -0.01
   wallProximityPenalty: 0
   collisionPenaltyCooldown: 0.5
-  moveRewardScale: 0.01
+  moveRewardScale: 0.12
   gripReward: 1
   outOfBoundsPenalty: -0.5
 
@@ -45,11 +45,15 @@ RobotBrain:
   # --- Ready-to-Grab zone ---
   grabZoneRadius: 1
 
+  # --- Return to Start ---
+  returnReward: 1
+  returnZoneRadius: 1.5
+
   # --- Коэффициенты наград (дополнительные) ---
   smoothnessPenaltyScale: 0.002
-  cameraRewardScale: 0.02
+  cameraRewardScale: 0.08
   cameraAngleDeadZone: 0.05
-  cameraRewardClamp: 0.02
+  cameraRewardClamp: 0.06
   failedGrabPenalty: -0.1
 
   # --- Speed Penalty in Grab Zone ---
@@ -79,23 +83,22 @@ EnvironmentManager:
 
   # --- Базовые настройки арены ---
   baseArenaSize: [3, 6]
-  boxCount: 10
+  boxCount: 5
   baseSafeRadius: 0.3
   scatterMargin: 0.5
-  maxBallDistanceFromFarWall: 1.15
+  maxBallDistanceFromFarWall: 18
 
   # --- Стартовая зона робота ---
   robotSpawnWidthFraction: 1
-  robotSpawnDepth: 1
+  robotSpawnDepth: 0.5
 
   # --- Настройки границ (Стены) ---
   createWalls: true
-  visibleWalls: true
   baseWallHeight: 0.5
 
   # --- Domain Randomization ---
-  randomizeBoxCount: true
-  boxCountRange: [4, 10]
+  randomizeBoxCount: false
+  boxCountRange: [3, 6]
   randomizeBoxMass: true
   boxMass: 0.5
   boxMassRange: [0.35, 0.65]
@@ -105,7 +108,7 @@ ArenaSpawner:
   floorMargin: 1.2
 
   # --- Настройки размножения ---
-  arenaCount: 30
+  arenaCount: 2
   spacing: 100
   arenasPerRow: 4
 
@@ -136,7 +139,7 @@ VirtualSensors:
 
 SimulatedYoloCamera:
   # --- Camera simulation ---
-  maxVisibleDistance: 30
+  maxVisibleDistance: 65
   horizontalFOV: 40
   cameraAspectRatio: 1.3333333
 

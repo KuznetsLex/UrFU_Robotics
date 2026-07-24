@@ -166,11 +166,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 54dbdb2ff48c233408a417605197a4cf, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnvironmentManager
   robot: {fileID: 0}
   targetBall: {fileID: 0}
   boxPrefab: {fileID: 5426988745256519477, guid: 78d101b4f88f740408d93593304eed40, type: 3}
+  startCube: {fileID: 0}
   globalScale: 10
   baseArenaSize: {x: 3, y: 6}
   boxCount: 5
@@ -180,9 +181,15 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 257
   maxBallDistanceFromFarWall: 1.15
+  robotSpawnWidthFraction: 1
+  robotSpawnDepth: 1.5
   createWalls: 1
-  visibleWalls: 1
   baseWallHeight: 0.5
+  randomizeBoxCount: 1
+  boxCountRange: {x: 4, y: 10}
+  randomizeBoxMass: 1
+  boxMass: 0.5
+  boxMassRange: {x: 0.35, y: 0.65}
 --- !u!1 &555000121
 GameObject:
   m_ObjectHideFlags: 0
@@ -225,7 +232,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 24430e11fbe846a8b4165e5bb41586ca, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TrainingCameraController
   targetCamera: {fileID: 0}
   zoomSpeed: 40
@@ -262,7 +269,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 11ade5f508fa41a9ac163bec8c00054e, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ArenaSpawner
   arenaTemplate:
   - {fileID: 2001394585}
@@ -454,6 +461,30 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: verticalTiltRange.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: verticalTiltRange.y
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_Model
+      value: 
+      objectReference: {fileID: 11400000, guid: 700dcbe4dfe44e8b9fcd40c8a874588c, type: 3}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_BehaviorType
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_BrainParameters.VectorObservationSize
+      value: 15
+      objectReference: {fileID: 0}
+    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: m_BrainParameters.NumStackedVectorObservations
+      value: 5
+      objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: MaxStep
       value: 0
@@ -461,10 +492,6 @@ PrefabInstance:
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: isTraining
       value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: useRealRobotIo
-      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: stepPenalty
@@ -483,6 +510,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: useRealRobotIo
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: noDetectionSteps
       value: 10000000
       objectReference: {fileID: 0}
@@ -493,30 +524,6 @@ PrefabInstance:
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: regenerateEveryEpisodes
       value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_BehaviorType
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_Model
-      value:
-      objectReference: {fileID: 11400000, guid: 700dcbe4dfe44e8b9fcd40c8a874588c, type: 3}
-    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_BrainParameters.VectorObservationSize
-      value: 15
-      objectReference: {fileID: 0}
-    - target: {fileID: 5228726323811062813, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: m_BrainParameters.NumStackedVectorObservations
-      value: 5
-      objectReference: {fileID: 0}
-    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: verticalTiltRange.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5025208088392879304, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
-      propertyPath: verticalTiltRange.y
-      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: m_Name

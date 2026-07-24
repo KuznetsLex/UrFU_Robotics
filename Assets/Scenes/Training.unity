@@ -119,6 +119,11 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!4 &254673182 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3868268352902041292, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+  m_PrefabInstance: {fileID: 4372044676883856589}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &443588116 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 3109124430721694727, guid: 8773bee89778e3c4d99fa415820efaf0, type: 3}
@@ -171,6 +176,7 @@ MonoBehaviour:
   robot: {fileID: 2001394585}
   targetBall: {fileID: 443588116}
   boxPrefab: {fileID: 5426988745256519477, guid: 78d101b4f88f740408d93593304eed40, type: 3}
+  startCube: {fileID: 1864368009}
   globalScale: 10
   baseArenaSize: {x: 3, y: 6}
   boxCount: 10
@@ -183,9 +189,7 @@ MonoBehaviour:
   robotSpawnWidthFraction: 1
   robotSpawnDepth: 1
   createWalls: 1
-  visibleWalls: 1
   baseWallHeight: 0.5
-  wallColor: {r: 0, g: 0, b: 0, a: 1}
   randomizeBoxCount: 1
   boxCountRange: {x: 4, y: 10}
   randomizeBoxMass: 1
@@ -243,6 +247,68 @@ MonoBehaviour:
   keyboardPanSpeed: 1.5
   arenaSpawner: {fileID: 0}
   focusedOrthographicSize: 20
+--- !u!1 &892453048
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 892453049}
+  - component: {fileID: 892453050}
+  m_Layer: 0
+  m_Name: CubePoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &892453049
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 892453048}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 254673182}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &892453050
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 892453048}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 225b163fea3fe064abbdb74b95785010, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SimulatedYoloCamera
+  maxVisibleDistance: 30
+  horizontalFOV: 40
+  cameraAspectRatio: 1.3333334
+  randomizeHorizontalFOV: 1
+  horizontalFOVRange: {x: 35, y: 55}
+  verticalTiltRange: {x: -5, y: 5}
+  randomizeSensorEffects: 1
+  angleNoiseStdDevRange: {x: 0, y: 0.03}
+  detectionDropoutRange: {x: 0, y: 0.1}
+  latencyMeasurementsRange: {x: 0, y: 2}
+  angleNoiseStdDev: 0
+  detectionDropoutProbability: 0
+  latencyMeasurements: 0
+  targetBall: {fileID: 0}
+  obstacleLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  targetTag: StartCube
 --- !u!1 &1069484983
 GameObject:
   m_ObjectHideFlags: 0
@@ -276,6 +342,7 @@ MonoBehaviour:
   - {fileID: 2001394585}
   - {fileID: 443588116}
   - {fileID: 555000112}
+  - {fileID: 1864368009}
   floorMargin: 1.2
   arenaCount: 30
   spacing: 100
@@ -300,6 +367,118 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
   m_PrefabInstance: {fileID: 4372044676883856589}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &1864368005
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1864368009}
+  - component: {fileID: 1864368008}
+  - component: {fileID: 1864368007}
+  - component: {fileID: 1864368006}
+  m_Layer: 0
+  m_Name: Cube
+  m_TagString: StartCube
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!65 &1864368006
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1864368005}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!23 &1864368007
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1864368005}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &1864368008
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1864368005}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!4 &1864368009
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1864368005}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.25, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &2001394585 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4608195664550236821, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
@@ -322,6 +501,36 @@ MonoBehaviour:
   maxRows: 2000
   flushEveryNRows: 20
   flushEverySeconds: 2
+--- !u!114 &2001394604
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1367852722}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 225b163fea3fe064abbdb74b95785010, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SimulatedYoloCamera
+  maxVisibleDistance: 30
+  horizontalFOV: 40
+  cameraAspectRatio: 1.3333334
+  randomizeHorizontalFOV: 1
+  horizontalFOVRange: {x: 35, y: 55}
+  verticalTiltRange: {x: -5, y: 5}
+  randomizeSensorEffects: 1
+  angleNoiseStdDevRange: {x: 0, y: 0.03}
+  detectionDropoutRange: {x: 0, y: 0.1}
+  latencyMeasurementsRange: {x: 0, y: 2}
+  angleNoiseStdDev: 0
+  detectionDropoutProbability: 0
+  latencyMeasurements: 0
+  targetBall: {fileID: 0}
+  obstacleLayer:
+    serializedVersion: 2
+    m_Bits: 256
+  targetTag: StartCube
 --- !u!1001 &3228754067649016818
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -529,6 +738,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      propertyPath: cubeVisionCamera
+      value: 
+      objectReference: {fileID: 892453050}
+    - target: {fileID: 7030976407208146201, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       propertyPath: noDetectionSteps
       value: 10000000
       objectReference: {fileID: 0}
@@ -554,11 +767,17 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 3868268352902041292, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 892453049}
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
       insertIndex: -1
       addedObject: {fileID: 2001394594}
+    - targetCorrespondingSourceObject: {fileID: 8034212023584245701, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2001394604}
   m_SourcePrefab: {fileID: 100100000, guid: e6a0015864b9f1748a4dadb5ac4cdf25, type: 3}
 --- !u!1001 &6736962765603667905
 PrefabInstance:
@@ -636,3 +855,4 @@ SceneRoots:
   - {fileID: 1069484985}
   - {fileID: 555000122}
   - {fileID: 555000112}
+  - {fileID: 1864368009}

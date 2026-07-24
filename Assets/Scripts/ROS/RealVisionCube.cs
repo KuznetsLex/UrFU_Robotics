@@ -8,47 +8,31 @@ using UnityEngine;
 
 namespace Team11.Ros
 {
-    [Serializable]
-    public sealed class YoloDataPacket
-    {
-        public float angle;
-        public float bbox_area_ratio;
-        public float bbox_aspect_ratio;
-        public float sees;
-        public float conf;
-        public float w;
-        public float h;
-        public float x1;
-        public float y1;
-        public float x2;
-        public float y2;
-        public float frame_w;
-        public float frame_h;
-    }
-
     /// <summary>
-    /// Receives YOLO detections from yolo_vision_node.py without blocking Unity.
-    /// Inherits the simulated camera contract so it can be assigned directly to RobotBrain.yoloCamera.
-    /// Один запущенный yolo_vision_node.py = один класс (TARGET_CLASSES) на
-    /// один UDP-порт — см. P7_YOLO_Deployment_Guide.md. Для второго класса
-    /// (кубик) используется отдельный порт и отдельный компонент, см.
-    /// RealVisionCube.cs, а не разбор поля класса внутри одного потока.
+    /// Receives YOLO detections of the red start-zone cube from a second
+    /// yolo_vision_node.py instance (TARGET_CLASSES = [1], см.
+    /// P7_YOLO_Deployment_Guide.md — один процесс = один класс на один UDP-порт,
+    /// поэтому кубик слушается отдельным портом, а не полем класса в общем
+    /// потоке с мячом). Структура идентична RealVision.cs (мяч), но
+    /// самостоятельна — свой сокет, свой поток, не делит состояние с RealVision.
+    /// Назначьте в RobotBrain.cubeVisionCamera так же, как RealVision — в
+    /// RobotBrain.yoloCamera.
     /// </summary>
     [DefaultExecutionOrder(-750)]
-    public sealed class RealVision : SimulatedYoloCamera
+    public sealed class RealVisionCube : SimulatedYoloCamera
     {
-        [Header("YOLO UDP")]
-        [SerializeField] private int udpPort = 5005;
+        [Header("YOLO UDP (кубик — второй yolo_vision_node.py, TARGET_CLASSES=[1])")]
+        [SerializeField] private int udpPort = 5006;
         [SerializeField, Min(0.05f)] private float packetTimeoutSeconds = 0.75f;
 
         [Header("Live telemetry")]
         [SerializeField] private bool useYOLO;
-        [SerializeField] private bool seesBall;
+        [SerializeField] private bool seesCube;
         [SerializeField, Range(-1f, 1f)] private float normalizedAngle;
         [SerializeField, Range(0f, 1f)] private float bboxAreaRatio;
         [SerializeField] private float bboxAspectRatio;
         [SerializeField, Range(0f, 1f)] private float confidence;
-        [SerializeField] private string receiverStatus = "Waiting for YOLO";
+        [SerializeField] private string receiverStatus = "Waiting for YOLO (cube)";
 
         private readonly ConcurrentQueue<string> incomingJson = new ConcurrentQueue<string>();
         private Thread receiverThread;
@@ -66,14 +50,14 @@ namespace Team11.Ros
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
         {
-            if (FindAnyObjectByType<RealVision>() != null)
+            if (FindAnyObjectByType<RealVisionCube>() != null)
             {
                 return;
             }
 
-            var instance = new GameObject("Real YOLO Vision");
+            var instance = new GameObject("Real YOLO Vision (Cube)");
             DontDestroyOnLoad(instance);
-            instance.AddComponent<RealVision>();
+            instance.AddComponent<RealVisionCube>();
         }
 
         private void OnEnable()
@@ -82,7 +66,7 @@ namespace Team11.Ros
             receiverThread = new Thread(ReceiveLoop)
             {
                 IsBackground = true,
-                Name = "YOLO UDP receiver"
+                Name = "YOLO UDP receiver (cube)"
             };
             receiverThread.Start();
         }
@@ -99,8 +83,8 @@ namespace Team11.Ros
             {
                 if (!HasFreshPacket && useYOLO)
                 {
-                    bool targetWasVisible = seesBall;
-                    seesBall = false;
+                    bool targetWasVisible = seesCube;
+                    seesCube = false;
                     normalizedAngle = 0f;
                     bboxAreaRatio = 0f;
                     bboxAspectRatio = 0f;
@@ -134,25 +118,30 @@ namespace Team11.Ros
             lastPacketTime = Time.unscaledTime;
             measurementVersion++;
             useYOLO = true;
-            seesBall = packet.sees > 0.5f;
+            seesCube = packet.sees > 0.5f;
             confidence = Mathf.Clamp01(packet.conf);
-            normalizedAngle = seesBall ? Mathf.Clamp(packet.angle, -1f, 1f) : 0f;
+            normalizedAngle = seesCube ? Mathf.Clamp(packet.angle, -1f, 1f) : 0f;
 
-            bboxAreaRatio = seesBall ? Mathf.Clamp01(packet.bbox_area_ratio) : 0f;
-            bboxAspectRatio = seesBall ? Mathf.Max(0f, packet.bbox_aspect_ratio) : 0f;
-            receiverStatus = seesBall
-                ? $"BALL  conf {confidence:F2}"
-                : "YOLO live - no ball";
+            bboxAreaRatio = seesCube ? Mathf.Clamp01(packet.bbox_area_ratio) : 0f;
+            bboxAspectRatio = seesCube ? Mathf.Max(0f, packet.bbox_aspect_ratio) : 0f;
+            receiverStatus = seesCube
+                ? $"CUBE  conf {confidence:F2}"
+                : "YOLO live - no cube";
         }
 
         public override (float angle, float areaRatio, float aspectRatio, bool visible) GetTargetInfo()
         {
-            if (!HasFreshPacket || !seesBall)
+            if (!HasFreshPacket || !seesCube)
             {
                 return (0f, 0f, 0f, false);
             }
 
             return (normalizedAngle, bboxAreaRatio, bboxAspectRatio, true);
+        }
+
+        public override void RandomizeDomainParameters()
+        {
+            // Физические параметры реальной камеры не рандомизируются во время инференса.
         }
 
         public bool TryGetFreshPacket(out YoloDataPacket packet)

@@ -166,6 +166,8 @@ public class RobotBrain : Agent
     public TrackController trackController;
     public VirtualSensors sensors;
     public SimulatedYoloCamera yoloCamera;
+    [Tooltip("Камера-детектор красного кубика в стартовой зоне (для фазы возврата). См. регламент: кубик размечает старт так же, как мяч размечает цель. Пока не назначено — используется временный ground-truth фолбэк, непригодный для реального робота.")]
+    public SimulatedYoloCamera cubeVisionCamera;
     public CameraRotator cameraRotator;
     public Transform gripperTransform;
     public Transform holdPoint;
@@ -260,6 +262,12 @@ public class RobotBrain : Agent
     [Header("Ready-to-Grab zone")]
     [Tooltip("Радиус зоны вокруг мяча, в которой считается, что робот готов к захвату (используется для бонуса и для отключения штрафа за потерю цели)")]
     public float grabZoneRadius = 1f;
+
+    [Header("Return to Start")]
+    [Tooltip("Награда за возврат в стартовую точку с мячом в клешне (завершает эпизод)")]
+    public float returnReward = 1f;
+    [Tooltip("Радиус зоны вокруг стартовой точки, в которой возврат считается завершённым")]
+    public float returnZoneRadius = 1.5f;
 
     // ==================== ДОПОЛНИТЕЛЬНЫЕ КОЭФФИЦИЕНТЫ ====================
     [Header("Коэффициенты наград (дополнительные)")]
@@ -362,6 +370,13 @@ public class RobotBrain : Agent
     private int cameraPanSampleCount;
     private int cameraPanAtLimitCount;
     private bool grabZoneRewardGranted;
+    // Фаза возврата: после захвата мяча эпизод не завершается, а цель shaping-наград
+    // и наблюдений "камеры" переключается с мяча на стартовую точку (см. CollectObservations
+    // и блок наград ниже) — так вторая половина задачи (см. регламент, Этап 2 Фаза 2)
+    // переиспользует уже обученное поведение "рули так, чтобы уменьшить |angle|",
+    // не меняя размер вектора наблюдений и не ломая совместимость с чекпоинтом.
+    private bool returningHome;
+    private float initialReturnDistance;
     private int previousGripCommand = 0; // Предыдущая команда клешни (0 – ничего, 1 – захват, 2 – отпустить)
     private Vector2 arenaHalfExtents = new Vector2(15f, 30f);
 
@@ -371,6 +386,7 @@ public class RobotBrain : Agent
     private bool statsSent;
     private RobotRosTeleop robotSensorReceiver;
     private RealVision realVision;
+    private RealVisionCube realVisionCube;
     private DiagnosticLogger diagLogger;
     private int arenaIndex;
     private SimulationRobotCommandSink simulationCommandSink;
@@ -668,6 +684,8 @@ public class RobotBrain : Agent
         hasSeenCameraMeasurement = false;
         lastCameraMeasurementVersion = 0;
         grabZoneRewardGranted = false;
+        returningHome = false;
+        initialReturnDistance = 0f;
         lastDistanceToBall = ball != null && holdPoint != null
             ? Vector3.Distance(holdPoint.position, ball.position)
             : 0f;
@@ -771,6 +789,21 @@ public class RobotBrain : Agent
         return yoloCamera;
     }
 
+    // Тот же паттерн переключения sim/real, что и GetSelectedVisionSource(),
+    // но для детектора стартового кубика (фаза возврата).
+    private SimulatedYoloCamera GetSelectedCubeVisionSource()
+    {
+        if (useRealRobotIo)
+        {
+            if (realVisionCube == null)
+                realVisionCube = FindAnyObjectByType<RealVisionCube>();
+
+            return realVisionCube;
+        }
+
+        return cubeVisionCamera;
+    }
+
     public bool TryGetSelectedVision(
         out (float angle, float areaRatio, float aspectRatio, bool visible) targetInfo)
     {
@@ -829,47 +862,115 @@ public class RobotBrain : Agent
         sensor.AddObservation(rightIr ? 1f : 0f);
         sensor.AddObservation(gripperMountedIr ? 1f : 0f);
 
-        // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость)
-        SimulatedYoloCamera selectedVision = GetSelectedVisionSource();
-        TryGetSelectedVision(out var targetInfo);
-
-        if (selectedVision != null)
+        // 2. Информация о цели с YOLO-камеры (угол, площадь, видимость) — ПЕРЕД
+        // захватом. После захвата (returningHome) мяч уже не актуален как цель:
+        // те же 4 значения подменяются синтетическим "компасом" на стартовую
+        // точку (см. ветку else), чтобы переиспользовать уже обученное поведение
+        // "рули так, чтобы уменьшить |angle|" для новой цели без изменения
+        // размера вектора наблюдений.
+        if (!returningHome)
         {
-            ulong measurementVersion = selectedVision.MeasurementVersion;
-            bool sourceHasMeasurement = !(selectedVision is RealVision) || measurementVersion > 0;
-            if (sourceHasMeasurement &&
-                (!hasSeenCameraMeasurement || measurementVersion != lastCameraMeasurementVersion))
+            SimulatedYoloCamera selectedVision = GetSelectedVisionSource();
+            TryGetSelectedVision(out var targetInfo);
+
+            if (selectedVision != null)
+            {
+                ulong measurementVersion = selectedVision.MeasurementVersion;
+                bool sourceHasMeasurement = !(selectedVision is RealVision) || measurementVersion > 0;
+                if (sourceHasMeasurement &&
+                    (!hasSeenCameraMeasurement || measurementVersion != lastCameraMeasurementVersion))
+                {
+                    cameraMeasurementPending = true;
+                    hasSeenCameraMeasurement = true;
+                    lastCameraMeasurementVersion = measurementVersion;
+                }
+            }
+
+            // Burst dropout: при резком вращении с шансом 15% на несколько шагов
+            // "слепим" камеру — имитирует смаз кадра/потерю трекинга YOLO при повороте.
+            if (burstDropoutRemaining > 0)
+                burstDropoutRemaining--;
+            if (simulateSensorNoise && enableBurstDropout && rb.angularVelocity.magnitude > 0.5f &&
+                UnityEngine.Random.value < 0.15f)
+            {
+                burstDropoutRemaining = UnityEngine.Random.Range(5, 16);
+            }
+            bool effectiveVisible = targetInfo.visible && burstDropoutRemaining == 0;
+
+            targetVisible = effectiveVisible;
+            if (effectiveVisible)
+            {
+                lastKnownAngle = targetInfo.angle;
+                lastKnownAreaRatio = targetInfo.areaRatio;
+                lastKnownAspectRatio = targetInfo.aspectRatio;
+                stepsSinceLastDetection = 0f;
+            }
+
+            sensor.AddObservation(effectiveVisible ? targetInfo.angle : lastKnownAngle);
+            sensor.AddObservation(effectiveVisible ? targetInfo.areaRatio : lastKnownAreaRatio);
+            sensor.AddObservation(effectiveVisible ? targetInfo.aspectRatio : lastKnownAspectRatio);
+            sensor.AddObservation(effectiveVisible ? 1f : 0f);
+        }
+        else if (GetSelectedCubeVisionSource() is SimulatedYoloCamera selectedCubeVision)
+        {
+            // Робот находит дорогу домой камерой на красный кубик в центре
+            // стартовой зоны (детектор обучен так же, как на мяч) — та же
+            // логика видимости/шума/burst-dropout, что и для мяча выше,
+            // просто другой источник измерения. sim/real выбирается тем же
+            // способом, что и для мяча (GetSelectedVisionSource/useRealRobotIo).
+            var cubeInfo = selectedCubeVision.GetTargetInfo();
+
+            ulong cubeMeasurementVersion = selectedCubeVision.MeasurementVersion;
+            if (!hasSeenCameraMeasurement || cubeMeasurementVersion != lastCameraMeasurementVersion)
             {
                 cameraMeasurementPending = true;
                 hasSeenCameraMeasurement = true;
-                lastCameraMeasurementVersion = measurementVersion;
+                lastCameraMeasurementVersion = cubeMeasurementVersion;
             }
-        }
 
-        // Burst dropout: при резком вращении с шансом 15% на несколько шагов
-        // "слепим" камеру — имитирует смаз кадра/потерю трекинга YOLO при повороте.
-        if (burstDropoutRemaining > 0)
-            burstDropoutRemaining--;
-        if (simulateSensorNoise && enableBurstDropout && rb.angularVelocity.magnitude > 0.5f &&
-            UnityEngine.Random.value < 0.15f)
-        {
-            burstDropoutRemaining = UnityEngine.Random.Range(5, 16);
-        }
-        bool effectiveVisible = targetInfo.visible && burstDropoutRemaining == 0;
+            if (burstDropoutRemaining > 0)
+                burstDropoutRemaining--;
+            if (simulateSensorNoise && enableBurstDropout && rb.angularVelocity.magnitude > 0.5f &&
+                UnityEngine.Random.value < 0.15f)
+            {
+                burstDropoutRemaining = UnityEngine.Random.Range(5, 16);
+            }
+            bool cubeEffectiveVisible = cubeInfo.visible && burstDropoutRemaining == 0;
 
-        targetVisible = effectiveVisible;
-        if (effectiveVisible)
+            targetVisible = cubeEffectiveVisible;
+            if (cubeEffectiveVisible)
+            {
+                lastKnownAngle = cubeInfo.angle;
+                lastKnownAreaRatio = cubeInfo.areaRatio;
+                lastKnownAspectRatio = cubeInfo.aspectRatio;
+                stepsSinceLastDetection = 0f;
+            }
+
+            sensor.AddObservation(cubeEffectiveVisible ? cubeInfo.angle : lastKnownAngle);
+            sensor.AddObservation(cubeEffectiveVisible ? cubeInfo.areaRatio : lastKnownAreaRatio);
+            sensor.AddObservation(cubeEffectiveVisible ? cubeInfo.aspectRatio : lastKnownAspectRatio);
+            sensor.AddObservation(cubeEffectiveVisible ? 1f : 0f);
+        }
+        else
         {
-            lastKnownAngle = targetInfo.angle;
-            lastKnownAreaRatio = targetInfo.areaRatio;
-            lastKnownAspectRatio = targetInfo.aspectRatio;
+            // Фолбэк, пока cubeVisionCamera не назначен в инспекторе (см.
+            // инструкцию по добавлению кубика в сцену) — ground-truth компас,
+            // работает только в симуляции, для реального робота непригоден.
+            float distanceToStart = Vector3.Distance(rb.position, startPos);
+            float syntheticAngle = Mathf.Clamp(
+                Vector3.SignedAngle(transform.forward, startPos - rb.position, Vector3.up) / 180f,
+                -1f, 1f);
+            float syntheticCloseness = Mathf.Clamp01(
+                1f - distanceToStart / Mathf.Max(0.01f, initialReturnDistance));
+
+            targetVisible = true;
             stepsSinceLastDetection = 0f;
-        }
 
-        sensor.AddObservation(effectiveVisible ? targetInfo.angle : lastKnownAngle);
-        sensor.AddObservation(effectiveVisible ? targetInfo.areaRatio : lastKnownAreaRatio);
-        sensor.AddObservation(effectiveVisible ? targetInfo.aspectRatio : lastKnownAspectRatio);
-        sensor.AddObservation(effectiveVisible ? 1f : 0f);
+            sensor.AddObservation(syntheticAngle);
+            sensor.AddObservation(syntheticCloseness);
+            sensor.AddObservation(1f);
+            sensor.AddObservation(1f);
+        }
 
         // 3. Состояние клешни: закрыта = +1, открыта = -1, неизвестно = 0.
         bool hasGripperState = TryGetSelectedGripperState(out bool isGripperOpen);
@@ -1082,6 +1183,9 @@ public class RobotBrain : Agent
 
         // 3. Потенциальная награда за положение цели в кадре. Рассчитывается только
         // один раз для каждого нового измерения камеры, а не для повторяемых действий.
+        // Работает и в фазе возврата, если назначен cubeVisionCamera (см.
+        // CollectObservations) — cameraMeasurementPending в этом случае
+        // отражает измерения по кубику, а не по мячу.
         if (cameraMeasurementPending)
         {
             cameraMeasurementPending = false;
@@ -1112,9 +1216,9 @@ public class RobotBrain : Agent
             previousCameraVisible = targetVisible;
         }
 
-        // 4. Бонус за нахождение в зоне захвата (однократно за эпизод)
+        // 4. Бонус за нахождение в зоне захвата (однократно за эпизод, не актуально при возврате)
         GripperController gripper = gripperTransform?.GetComponent<GripperController>();
-        if (gripper != null)
+        if (!returningHome && gripper != null)
         {
             if (!grabZoneRewardGranted && ball != null && holdPoint != null &&
                 Vector3.Distance(holdPoint.position, ball.position) < grabZoneRadius)
@@ -1124,8 +1228,16 @@ public class RobotBrain : Agent
             }
         }
 
-        // 5. Награда за приближение к мячу (реальное расстояние)
-        if (ball != null)
+        // 5. Награда за приближение к цели (реальное расстояние) — к мячу до
+        // захвата, к стартовой точке после (см. returningHome в CollectObservations).
+        if (returningHome)
+        {
+            float currentDistance = Vector3.Distance(rb.position, startPos);
+            float distReward = (lastDistanceToBall - currentDistance) * moveRewardScale;
+            AddRewardWithStats("ReturnDistanceReward", distReward);
+            lastDistanceToBall = currentDistance;
+        }
+        else if (ball != null)
         {
             float currentDistance = Vector3.Distance(holdPoint.position, ball.position);
             float distReward = (lastDistanceToBall - currentDistance) * moveRewardScale;
@@ -1143,9 +1255,10 @@ public class RobotBrain : Agent
             rewardUltrasonicMeters < 0.5f)
             AddRewardWithStats("WallProximity", wallProximityPenalty);
 
-        // 7. Штраф за высокую скорость в зоне захвата
+        // 7. Штраф за высокую скорость в зоне захвата (не актуально при возврате —
+        // после захвата расстояние holdPoint-мяч всегда ~0, условие было бы всегда истинным)
         // Проверяем, находимся ли в зоне захвата (используем расстояние от holdPoint до мяча)
-        if (ball != null && holdPoint != null &&
+        if (!returningHome && ball != null && holdPoint != null &&
             Vector3.Distance(holdPoint.position, ball.position) < grabZoneRadius)
         {
             // Получаем текущие скорости
@@ -1198,10 +1311,23 @@ public class RobotBrain : Agent
 
         // ---------- ПРОВЕРКИ ЗАВЕРШЕНИЯ ЭПИЗОДА ----------
 
-        // 7. Успешный захват мяча – главная положительная цель
-        if (!useRealRobotIo && commandResult.IsGrabbing)
+        // 7. Успешный захват мяча — переключаемся в фазу возврата на старт вместо
+        // немедленного завершения эпизода (см. регламент финальной эстафеты: Этап 2
+        // Фаза 2 "возврат с мячом" — отдельные баллы, которые раньше вообще не
+        // тренировались). Однократный переход по фронту (!returningHome), иначе
+        // GripReward начислялся бы каждый шаг, пока мяч удерживается.
+        if (!useRealRobotIo && commandResult.IsGrabbing && !returningHome)
         {
             AddRewardWithStats("GripReward", gripReward);
+            returningHome = true;
+            initialReturnDistance = Mathf.Max(0.01f, Vector3.Distance(rb.position, startPos));
+            lastDistanceToBall = initialReturnDistance;
+        }
+
+        // 7б. Успешный возврат в стартовую точку с мячом — финальная цель эпизода.
+        if (returningHome && Vector3.Distance(rb.position, startPos) < returnZoneRadius)
+        {
+            AddRewardWithStats("ReturnReward", returnReward);
             SendStatsToTensorBoard(episodeSucceeded: true);
             EndEpisode();
             return;
@@ -1383,6 +1509,9 @@ public class RobotBrain : Agent
         // Префикс "Environment/" — чтобы попасть в ту же карточку TensorBoard,
         // что и штатные Environment/Cumulative Reward и Environment/Episode Length.
         statsRecorder.Add("Environment/Success Rate", episodeSucceeded ? 1f : 0f, StatAggregationMethod.Average);
+        // Отдельно от общего успеха (захват + возврат) — доля эпизодов, где мяч
+        // хотя бы был захвачен, даже если возврат на старт не удался/не успел.
+        statsRecorder.Add("Environment/Grab Rate", returningHome ? 1f : 0f, StatAggregationMethod.Average);
         statsRecorder.Add(
             "Camera/Score",
             cameraMeasurementCount > 0 ? cameraScoreSum / cameraMeasurementCount : 0f);

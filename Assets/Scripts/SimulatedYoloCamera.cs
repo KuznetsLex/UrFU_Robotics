@@ -52,6 +52,8 @@ public class SimulatedYoloCamera : MonoBehaviour
     [Header("References")]
     public Transform targetBall;
     public LayerMask obstacleLayer;
+    [Tooltip("Тег объекта-цели, который ищет ResolveSceneTarget(), если targetBall не назначен вручную. По умолчанию — мяч; для второго экземпляра этого компонента (детектор стартового кубика) укажите тег кубика.")]
+    public string targetTag = "TargetBall";
 
     private void Awake()
     {
@@ -237,7 +239,7 @@ public class SimulatedYoloCamera : MonoBehaviour
             return;
         }
 
-        GameObject sceneTarget = GameObject.FindWithTag("TargetBall");
+        GameObject sceneTarget = GameObject.FindWithTag(targetTag);
         targetBall = sceneTarget != null ? sceneTarget.transform : null;
     }
 

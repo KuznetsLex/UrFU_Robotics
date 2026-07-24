@@ -121,6 +121,7 @@ public class ArenaSpawner : MonoBehaviour
     private void WireArena(GameObject arenaRoot)
     {
         Transform ball = arenaRoot.transform.Find("Ball");
+        Transform cube = arenaRoot.transform.Find("Cube");
         RobotBrain brain = arenaRoot.GetComponentInChildren<RobotBrain>();
         EnvironmentManager env = arenaRoot.GetComponentInChildren<EnvironmentManager>();
 
@@ -141,6 +142,16 @@ public class ArenaSpawner : MonoBehaviour
         if (brain.yoloCamera != null)
             brain.yoloCamera.targetBall = ball;
 
+        // Красный кубик — та же болезнь плюс дополнительная: SimulatedYoloCamera
+        // без назначенного targetBall ищет цель по тегу через GameObject.FindWithTag(),
+        // который при нескольких аренах вернёт ПЕРВЫЙ попавшийся кубик в сцене
+        // (не обязательно "свой"). Явное присвоение ниже полностью обходит
+        // поиск по тегу для клонированных арен.
+        if (cube == null)
+            Debug.LogWarning($"ArenaSpawner: в {arenaRoot.name} не найден дочерний объект \"Cube\" — добавьте кубик в Arena Template.");
+        else if (brain.cubeVisionCamera != null)
+            brain.cubeVisionCamera.targetBall = cube;
+
         if (env != null)
         {
             // На случай, если EnvironmentManager.Awake() для этой конкретной арены
@@ -152,6 +163,7 @@ public class ArenaSpawner : MonoBehaviour
 
             env.robot = brain.transform;
             env.targetBall = ball;
+            env.startCube = cube;
             brain.environmentManager = env;
             CreateFloor(env);
             arenaEnvironments.Add(env);

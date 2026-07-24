@@ -10,6 +10,8 @@ public class EnvironmentManager : MonoBehaviour
     public Transform robot;
     public Transform targetBall;
     public GameObject boxPrefab;
+    [Tooltip("Красный кубик — размечает центр стартовой зоны (см. регламент финальной эстафеты). Позиционируется в ту же точку, что и старт робота, каждый эпизод. Нужен тег для SimulatedYoloCamera.targetTag на детекторе кубика.")]
+    public Transform startCube;
 
     [Header("Масштабирование мира")]
     public float globalScale = 10f;
@@ -33,9 +35,7 @@ public class EnvironmentManager : MonoBehaviour
 
     [Header("Настройки границ (Стены)")]
     public bool createWalls = true;       // Создавать ли физические границы
-    public bool visibleWalls = true;      // Оставить ли стены видимыми (MeshRenderer)
     public float baseWallHeight = 0.5f;   // Высота стен до масштабирования
-    public Color wallColor = Color.black; // Цвет стен — чтобы их было видно при виде сверху
 
     [Header("Domain Randomization")]
     [Tooltip("Рандомизировать количество коробок при каждой генерации арены (диапазон boxCountRange) вместо фиксированного boxCount")]
@@ -55,7 +55,6 @@ public class EnvironmentManager : MonoBehaviour
     private List<Vector3> pathSegments = new List<Vector3>();
     private GameObject wallsContainer;    // Контейнер для сгенерированных стен
     private int obstacleLayer = -1;
-    private Material wallMaterial;        // Общий материал для всех стен (создаётся один раз)
 
     private void Awake()
     {
@@ -163,25 +162,9 @@ public class EnvironmentManager : MonoBehaviour
         wall.transform.localScale = scale;
         MarkAsObstacle(wall);
 
-        // Если не хотим видеть стены, удаляем компонент отрисовки, оставляя только коллайдер
-        if (!visibleWalls)
-        {
-            Destroy(wall.GetComponent<MeshRenderer>());
-        }
-        else
-        {
-            wall.GetComponent<MeshRenderer>().sharedMaterial = GetWallMaterial();
-        }
-    }
-
-    private Material GetWallMaterial()
-    {
-        if (wallMaterial == null)
-        {
-            wallMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            wallMaterial.color = wallColor;
-        }
-        return wallMaterial;
+        // Материалы не используются (в Dedicated Server build шейдеры вырезаны
+        // и создание Material кидает ArgumentNullException) — стены всегда без рендера, только коллайдер.
+        Destroy(wall.GetComponent<MeshRenderer>());
     }
 
     private void RandomizeStartAndTarget()
@@ -217,6 +200,15 @@ public class EnvironmentManager : MonoBehaviour
             robotRb.MoveRotation(startRot);
         }
         robot.SetPositionAndRotation(startPos, startRot);
+
+        // Красный кубик — центр стартовой зоны (см. регламент), совпадает по
+        // X/Z со стартовой точкой робота этого эпизода; высоту сохраняем свою
+        // (кубик стоит на полу), как и для робота/мяча.
+        if (startCube != null)
+        {
+            float cubeY = startCube.position.y - transform.position.y;
+            startCube.position = new Vector3(startPos.x, transform.position.y + cubeY, startPos.z);
+        }
 
         // Мяч (цель) — у дальней от старта робота стены (+Z), не дальше
         // maxBallDistanceFromFarWall от неё, но с отступом padding, чтобы не
